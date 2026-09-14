@@ -6,20 +6,27 @@ export interface CandleData {
   close: number;
 }
 
-export type PredictionDirection = 'buy' | 'sell' | null;
+export type TradeDirection = 'buy' | 'sell';
+export type GameMode = 'opposite' | 'same_side';
 
 export interface GameState {
-  status: 'waiting' | 'betting' | 'predicting' | 'resolved';
+  status: 'waiting' | 'setup' | 'betting' | 'predicting' | 'resolved';
   asset: string;
+  timerDuration: 30 | 60;
   currentOpenPrice: number;
   targetClosePrice: number | null;
   pot: number;
   serviceCharge: number;
+  gameMode: GameMode;
+  scores: {
+    host: number;
+    challenger: number;
+  };
   players: {
     host: {
       id: string | null;
       name: string;
-      prediction: PredictionDirection;
+      betDirection: TradeDirection | null;
       bet: number;
       balance: number;
       wins: number;
@@ -28,7 +35,7 @@ export interface GameState {
     challenger: {
       id: string | null;
       name: string;
-      prediction: PredictionDirection;
+      betDirection: TradeDirection | null;
       bet: number;
       balance: number;
       wins: number;
@@ -40,19 +47,24 @@ export interface GameState {
 export interface GameResult {
   targetClosePrice: number;
   openPrice: number;
-  hostPrediction: PredictionDirection;
-  challengerPrediction: PredictionDirection;
+  priceChange: number;
+  hostBetDirection: TradeDirection;
+  challengerBetDirection: TradeDirection;
   hostCorrect: boolean;
   challengerCorrect: boolean;
   winner: string;
   winnerPayout?: string;
   pot?: string;
   serviceChargeCollected?: string;
+  gameMode: GameMode;
+  hostScore: number;
+  challengerScore: number;
 }
 
 export interface PlayerBet {
   player: string;
   bet: number;
+  direction: TradeDirection;
   serviceCharge: number;
 }
 

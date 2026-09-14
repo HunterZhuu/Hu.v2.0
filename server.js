@@ -17,17 +17,23 @@ const INITIAL_BALANCE = 100; // Starting balance for new players
 
 // Game State
 let gameState = {
-    status: 'waiting', // 'waiting', 'betting', 'predicting', 'resolved'
+    status: 'waiting', // 'waiting', 'setup', 'betting', 'predicting', 'resolved'
     asset: 'BTC/USDT',
+    timerDuration: 60, // 30 or 60 seconds
     currentOpenPrice: 0,
     targetClosePrice: null,
     pot: 0, // Total money in the pot
     serviceCharge: 0, // Total service charges collected
+    gameMode: null, // 'opposite' or 'same_side'
+    scores: {
+        host: 0,
+        challenger: 0
+    },
     players: {
         host: { 
             id: null, 
             name: 'Host', 
-            prediction: null, // 'buy' or 'sell'
+            betDirection: null, // 'buy' or 'sell'
             bet: 0,
             balance: INITIAL_BALANCE,
             wins: 0,
@@ -36,7 +42,7 @@ let gameState = {
         challenger: { 
             id: null, 
             name: 'Challenger', 
-            prediction: null, // 'buy' or 'sell'
+            betDirection: null, // 'buy' or 'sell'
             bet: 0,
             balance: INITIAL_BALANCE,
             wins: 0,
@@ -80,65 +86,101 @@ function determineWinner() {
     const host = gameState.players.host;
     const challenger = gameState.players.challenger;
 
-    if (!host.prediction || !challenger.prediction) return;
+    if (!host.betDirection || !challenger.betDirection) return;
 
     // Determine if price went up or down
     const priceWentUp = gameState.targetClosePrice > gameState.currentOpenPrice;
+    const priceChange = gameState.targetClosePrice - gameState.currentOpenPrice;
     
-    // Check if predictions were correct
-    const hostCorrect = (host.prediction === 'buy' && priceWentUp) || (host.prediction === 'sell' && !priceWentUp);
-    const challengerCorrect = (challenger.prediction === 'buy' && priceWentUp) || (challenger.prediction === 'sell' && !priceWentUp);
-
+    // Determine game mode
+    const gameMode = host.betDirection === challenger.betDirection ? 'same_side' : 'opposite';
+    
     let winner = 'Draw';
     let winnerPayout = 0;
+    let hostCorrect = false;
+    let challengerCorrect = false;
     
-    if (hostCorrect && !challengerCorrect) {
-        // Host wins
-        winner = 'host';
-        winnerPayout = gameState.pot;
-        gameState.players.host.balance += winnerPayout;
-        gameState.players.host.wins++;
-        gameState.players.challenger.losses++;
-    } else if (!hostCorrect && challengerCorrect) {
-        // Challenger wins
-        winner = 'challenger';
-        winnerPayout = gameState.pot;
-        gameState.players.challenger.balance += winnerPayout;
-        gameState.players.challenger.wins++;
-        gameState.players.host.losses++;
-    } else if (hostCorrect && challengerCorrect) {
-        // Both correct - split the pot
-        const splitAmount = gameState.pot / 2;
-        gameState.players.host.balance += splitAmount;
-        gameState.players.challenger.balance += splitAmount;
-        gameState.players.host.wins++;
-        gameState.players.challenger.wins++;
+    if (gameMode === 'opposite') {
+        // Standard mode: whoever predicted correctly wins
+        hostCorrect = (host.betDirection === 'buy' && priceWentUp) || (host.betDirection === 'sell' && !priceWentUp);
+        challengerCorrect = (challenger.betDirection === 'buy' && priceWentUp) || (challenger.betDirection === 'sell' && !priceWentUp);
+        
+        if (hostCorrect && !challengerCorrect) {
+            winner = 'host';
+            winnerPayout = gameState.pot;
+            gameState.players.host.balance += winnerPayout;
+            gameState.players.host.wins++;
+            gameState.players.challenger.losses++;
+        } else if (!hostCorrect && challengerCorrect) {
+            winner = 'challenger';
+            winnerPayout = gameState.pot;
+            gameState.players.challenger.balance += winnerPayout;
+            gameState.players.challenger.wins++;
+            gameState.players.host.losses++;
+        } else if (hostCorrect && challengerCorrect) {
+            // Both correct - split the pot
+            const splitAmount = gameState.pot / 2;
+            gameState.players.host.balance += splitAmount;
+            gameState.players.challenger.balance += splitAmount;
+            gameState.players.host.wins++;
+            gameState.players.challenger.wins++;
+        } else {
+            // Both wrong - house keeps the pot
+            winner = 'House';
+            gameState.players.host.losses++;
+            gameState.players.challenger.losses++;
+        }
     } else {
-        // Both wrong - house keeps the pot
-        winner = 'House';
-        gameState.players.host.losses++;
-        gameState.players.challenger.losses++;
+        // Same side mode: both bet same direction, higher bet wins
+        // Both are "correct" if price went their way
+        hostCorrect = (host.betDirection === 'buy' && priceWentUp) || (host.betDirection === 'sell' && !priceWentUp);
+        challengerCorrect = (challenger.betDirection === 'buy' && priceWentUp) || (challenger.betDirection === 'sell' && !priceWentUp);
+        
+        if (host.bet > challenger.bet) {
+            winner = 'host';
+            winnerPayout = gameState.pot;
+            gameState.players.host.balance += winnerPayout;
+            gameState.players.host.wins++;
+            gameState.players.challenger.losses++;
+        } else if (challenger.bet > host.bet) {
+            winner = 'challenger';
+            winnerPayout = gameState.pot;
+            gameState.players.challenger.balance += winnerPayout;
+            gameState.players.challenger.wins++;
+            gameState.players.host.losses++;
+        } else {
+            // Equal bets - split pot
+            const splitAmount = gameState.pot / 2;
+            gameState.players.host.balance += splitAmount;
+            gameState.players.challenger.balance += splitAmount;
+            gameState.players.host.wins++;
+            gameState.players.challenger.wins++;
+        }
     }
 
     io.emit('game_resolved', {
         targetClosePrice: gameState.targetClosePrice,
         openPrice: gameState.currentOpenPrice,
-        hostPrediction: host.prediction,
-        challengerPrediction: challenger.prediction,
+        priceChange: parseFloat(priceChange.toFixed(2)),
+        hostBetDirection: host.betDirection,
+        challengerBetDirection: challenger.betDirection,
         hostCorrect: hostCorrect,
         challengerCorrect: challengerCorrect,
         winner: winner,
         winnerPayout: winnerPayout.toFixed(2),
         pot: gameState.pot.toFixed(2),
-        serviceChargeCollected: gameState.serviceCharge.toFixed(2)
+        serviceChargeCollected: gameState.serviceCharge.toFixed(2),
+        gameMode: gameMode,
+        hostScore: gameState.players.host.wins,
+        challengerScore: gameState.players.challenger.wins
     });
 
     // Reset game after 8 seconds
     setTimeout(() => {
         gameState.status = 'waiting';
-        gameState.players.host.prediction = null;
+        gameState.players.host.betDirection = null;
         gameState.players.host.bet = 0;
-        gameState.players.challenger.prediction = null;
+        gameState.players.challenger.betDirection = null;
         gameState.players.challenger.bet = 0;
         gameState.targetClosePrice = null;
         gameState.pot = 0;
@@ -167,11 +209,11 @@ io.on('connection', (socket) => {
         socket.emit('room_full');
     }
 
-    // Handle bet placement
-    socket.on('place_bet', (betAmount) => {
+    // Handle bet placement with direction
+    socket.on('place_bet', ({ amount, direction }) => {
         if (gameState.status !== 'betting') return;
 
-        const bet = parseFloat(betAmount);
+        const bet = parseFloat(amount);
         if (isNaN(bet) || bet <= 0) {
             socket.emit('bet_error', 'Invalid bet amount');
             return;
@@ -179,6 +221,11 @@ io.on('connection', (socket) => {
 
         if (bet > MAX_BET) {
             socket.emit('bet_error', `Maximum bet is $${MAX_BET}`);
+            return;
+        }
+
+        if (direction !== 'buy' && direction !== 'sell') {
+            socket.emit('bet_error', 'Invalid direction');
             return;
         }
 
@@ -190,12 +237,13 @@ io.on('connection', (socket) => {
             
             const serviceCharge = calculateServiceCharge(bet);
             gameState.players.host.bet = bet;
+            gameState.players.host.betDirection = direction;
             gameState.players.host.balance -= (bet + serviceCharge);
             gameState.pot += bet;
             gameState.serviceCharge += serviceCharge;
             
             socket.emit('balance_update', { balance: gameState.players.host.balance });
-            io.emit('player_bet', { player: 'host', bet: bet, serviceCharge: serviceCharge });
+            io.emit('player_bet', { player: 'host', bet: bet, direction: direction, serviceCharge: serviceCharge });
         } else if (socket.id === gameState.players.challenger.id) {
             if (bet > gameState.players.challenger.balance) {
                 socket.emit('bet_error', 'Insufficient balance');
@@ -204,43 +252,37 @@ io.on('connection', (socket) => {
             
             const serviceCharge = calculateServiceCharge(bet);
             gameState.players.challenger.bet = bet;
+            gameState.players.challenger.betDirection = direction;
             gameState.players.challenger.balance -= (bet + serviceCharge);
             gameState.pot += bet;
             gameState.serviceCharge += serviceCharge;
             
             socket.emit('balance_update', { balance: gameState.players.challenger.balance });
-            io.emit('player_bet', { player: 'challenger', bet: bet, serviceCharge: serviceCharge });
+            io.emit('player_bet', { player: 'challenger', bet: bet, direction: direction, serviceCharge: serviceCharge });
         }
 
-        // If both placed bets, start prediction phase
+        // If both placed bets, determine game mode and start countdown
         if (gameState.players.host.bet > 0 && gameState.players.challenger.bet > 0) {
             gameState.status = 'predicting';
+            
+            // Determine game mode
+            const gameMode = gameState.players.host.betDirection === gameState.players.challenger.betDirection 
+                ? 'same_side' 
+                : 'opposite';
+            
             io.emit('both_bet', { 
-                message: 'Both players placed bets! Now make your predictions.',
+                message: gameMode === 'opposite' 
+                    ? 'Opposite positions! Whoever predicts correctly wins.'
+                    : 'Same side duel! Higher bet wins.',
                 pot: gameState.pot,
-                serviceCharge: gameState.serviceCharge
+                serviceCharge: gameState.serviceCharge,
+                gameMode: gameMode
             });
         }
     });
 
-    // Handle prediction (buy/sell)
-    socket.on('submit_prediction', (direction) => {
-        if (gameState.status !== 'predicting') return;
-        if (direction !== 'buy' && direction !== 'sell') return;
-
-        if (socket.id === gameState.players.host.id) {
-            gameState.players.host.prediction = direction;
-            io.emit('player_locked', { player: 'host', prediction: direction });
-        } else if (socket.id === gameState.players.challenger.id) {
-            gameState.players.challenger.prediction = direction;
-            io.emit('player_locked', { player: 'challenger', prediction: direction });
-        }
-
-        // If both locked, wait for candle close
-        if (gameState.players.host.prediction && gameState.players.challenger.prediction) {
-            io.emit('both_locked');
-        }
-    });
+    // Note: Prediction is now part of bet placement (place_bet with direction)
+    // No separate submit_prediction event needed
 
     // Handle deposit
     socket.on('deposit', ({ amount, method }) => {
@@ -300,12 +342,12 @@ io.on('connection', (socket) => {
         if (socket.id === gameState.players.host.id) {
             gameState.players.host.id = null;
             gameState.players.host.balance = INITIAL_BALANCE;
-            gameState.players.host.prediction = null;
+            gameState.players.host.betDirection = null;
         }
         if (socket.id === gameState.players.challenger.id) {
             gameState.players.challenger.id = null;
             gameState.players.challenger.balance = INITIAL_BALANCE;
-            gameState.players.challenger.prediction = null;
+            gameState.players.challenger.betDirection = null;
         }
         
         gameState.status = 'waiting';
