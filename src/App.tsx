@@ -7,6 +7,7 @@ import UserProfile from './components/UserProfile';
 import ChallengeModal from './components/ChallengeModal';
 import Wallet from './components/Wallet';
 import DepositModal from './components/DepositModal';
+import WithdrawModal from './components/WithdrawModal';
 import PremiumModal from './components/PremiumModal';
 import { CandleData, GameResult, TradeDirection, TradingAsset, TRADING_ASSETS } from './types';
 
@@ -63,6 +64,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'markets' | 'players'>('markets');
   const [showWallet, setShowWallet] = useState(false);
   const [showDeposit, setShowDeposit] = useState(false);
+  const [showWithdraw, setShowWithdraw] = useState(false);
   const [showPremium, setShowPremium] = useState(false);
   const [isPremium, setIsPremium] = useState(false);
   const [depositRequired, setDepositRequired] = useState(0);
@@ -228,6 +230,21 @@ export default function App() {
     setBalance(prev => prev + amount);
     setMessage(`Successfully deposited $${amount.toFixed(2)} via ${method}`);
     setTimeout(() => setMessage(''), 3000);
+  };
+
+  const handleWithdraw = (amount: number, method: string, details: string) => {
+    const processingFee = amount * 0.02; // 2% processing fee
+    const totalDeducted = amount + processingFee;
+    
+    if (totalDeducted > balance) {
+      setMessage('Insufficient balance for withdrawal');
+      setTimeout(() => setMessage(''), 3000);
+      return;
+    }
+
+    setBalance(prev => prev - totalDeducted);
+    setMessage(`Withdrawal of $${amount.toFixed(2)} initiated via ${method}. Processing time: 1-3 business days.`);
+    setTimeout(() => setMessage(''), 5000);
   };
 
   const handleUpgrade = () => {
@@ -670,9 +687,9 @@ export default function App() {
                 setShowWallet(false);
                 setShowDeposit(true);
               }}
-              onWithdraw={() => {
-                setMessage('Withdrawal feature coming soon!');
-                setTimeout(() => setMessage(''), 3000);
+              onWithdrawRequest={() => {
+                setShowWallet(false);
+                setShowWithdraw(true);
               }}
             />
           </div>
@@ -689,6 +706,14 @@ export default function App() {
         currentBalance={balance}
         requiredAmount={depositRequired > 0 ? depositRequired : undefined}
         onDeposit={handleDeposit}
+      />
+
+      {/* Withdraw Modal */}
+      <WithdrawModal
+        isOpen={showWithdraw}
+        onClose={() => setShowWithdraw(false)}
+        currentBalance={balance}
+        onWithdraw={handleWithdraw}
       />
 
       {/* Premium Modal */}

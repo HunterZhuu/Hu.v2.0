@@ -4,7 +4,7 @@ interface WalletProps {
   balance: number;
   isPremium: boolean;
   onDeposit: () => void;
-  onWithdraw: () => void;
+  onWithdrawRequest: () => void;
 }
 
 interface Transaction {
@@ -24,7 +24,7 @@ const MOCK_TRANSACTIONS: Transaction[] = [
   { id: '5', type: 'win', amount: 30, description: 'Won bet on Silver', timestamp: new Date(Date.now() - 259200000) },
 ];
 
-export default function Wallet({ balance, isPremium, onDeposit, onWithdraw }: WalletProps) {
+export default function Wallet({ balance, isPremium, onDeposit, onWithdrawRequest }: WalletProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'history'>('overview');
 
   const getTransactionIcon = (type: string) => {
@@ -89,14 +89,13 @@ export default function Wallet({ balance, isPremium, onDeposit, onWithdraw }: Wa
             >
               + Deposit
             </button>
-            <button
-              onClick={onWithdraw}
-              disabled={balance < 10}
-              className="flex-1 py-2 bg-gray-800 hover:bg-gray-700 disabled:bg-gray-900 disabled:text-gray-600 text-gray-400 text-sm font-bold rounded transition-all"
-            >
-              Withdraw
-            </button>
-          </div>
+              <button
+                onClick={onWithdrawRequest}
+                disabled={balance < 10}
+                className="flex-1 py-2 bg-gray-800 hover:bg-gray-700 disabled:bg-gray-900 disabled:text-gray-600 text-gray-400 text-sm font-bold rounded transition-all"
+              >
+                Withdraw
+              </button>          </div>
         </div>
 
         {/* Premium Benefits */}
