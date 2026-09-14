@@ -3,7 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import PriceChart from './components/PriceChart';
 import PaymentModal from './components/PaymentModal';
 import Leaderboard from './components/Leaderboard';
-import { CandleData, GameResult, TradeDirection, LeaderboardEntry, GameMode } from './types';
+import { CandleData, GameResult, TradeDirection, LeaderboardEntry } from './types';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
 const MAX_BET = 10;
@@ -192,16 +192,11 @@ export default function App() {
 
   // Betting state
   const [betAmount, setBetAmount] = useState('');
+  const [agreedBetAmount, setAgreedBetAmount] = useState(0); // The amount both players agreed to
   const [balance, setBalance] = useState(INITIAL_BALANCE);
-  const [hostBet, setHostBet] = useState(0);
-  const [challengerBet, setChallengerBet] = useState(0);
-  const [hostServiceCharge, setHostServiceCharge] = useState(0);
-  const [challengerServiceCharge, setChallengerServiceCharge] = useState(0);
-  const [pot, setPot] = useState(0);
-  const [totalServiceCharge, setTotalServiceCharge] = useState(0);
-  const [betError, setBetError] = useState('');
   const [hostBetPlaced, setHostBetPlaced] = useState(false);
   const [challengerBetPlaced, setChallengerBetPlaced] = useState(false);
+  const [betError, setBetError] = useState('');
 
   // Payment modal state
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -255,16 +250,17 @@ export default function App() {
       setTimeout(() => setBetError(''), 3000);
     });
 
-    newSocket.on('player_bet', (data: { player: string; bet: number; direction: TradeDirection; serviceCharge: number }) => {
+    newSocket.on('bet_amount_set', (data: { amount: number }) => {
+      setAgreedBetAmount(data.amount);
+      setMessage(`Both players agreed to bet $${data.amount.toFixed(2)} each!`);
+    });
+
+    newSocket.on('player_bet', (data: { player: string; direction: TradeDirection }) => {
       if (data.player === 'host') {
-        setHostBet(data.bet);
         setHostBetDirection(data.direction);
-        setHostServiceCharge(data.serviceCharge);
         setHostBetPlaced(true);
       } else {
-        setChallengerBet(data.bet);
         setChallengerBetDirection(data.direction);
-        setChallengerServiceCharge(data.serviceCharge);
         setChallengerBetPlaced(true);
       }
     });
@@ -274,21 +270,15 @@ export default function App() {
       setMessage(data.message);
       setHostBetPlaced(false);
       setChallengerBetPlaced(false);
-      setHostBet(0);
-      setChallengerBet(0);
       setHostBetDirection(null);
       setChallengerBetDirection(null);
-      setPot(0);
-      setTotalServiceCharge(0);
+      setAgreedBetAmount(0);
       setMyBetDirection(null);
     });
 
-    newSocket.on('both_bet', (data: { message: string; pot: number; serviceCharge: number }) => {
+    newSocket.on('both_bet', (data: { message: string; pot: number }) => {
       setGameStatus('resolved');
       setMessage(data.message);
-      setPot(data.pot);
-      setTotalServiceCharge(data.serviceCharge);
-      // Start countdown
       setCandleCountdown(timerDuration);
     });
 
@@ -323,16 +313,13 @@ export default function App() {
       setGameStatus('waiting');
       setHostBetPlaced(false);
       setChallengerBetPlaced(false);
-      setHostBet(0);
-      setChallengerBet(0);
       setHostBetDirection(null);
       setChallengerBetDirection(null);
       setResult(null);
       setBetAmount('');
+      setAgreedBetAmount(0);
       setMyBetDirection(null);
       setMessage('');
-      setPot(0);
-      setTotalServiceCharge(0);
       setCandleCountdown(timerDuration);
     });
 
@@ -395,81 +382,46 @@ export default function App() {
     const priceWentUp = closePrice > openPrice;
     const priceChange = closePrice - openPrice;
 
-    // Simulate opponent
-    const opponentDirection: TradeDirection = Math.random() > 0.5 ? 'buy' : 'sell';
+    // Simulate opponent with opposite direction
+    const opponentDirection: TradeDirection = myBetDirection === 'buy' ? 'sell' : 'buy';
     setChallengerBetDirection(opponentDirection);
     setChallengerBetPlaced(true);
-    setChallengerBet(5);
-    setChallengerServiceCharge(0.25);
-    setPot(prev => prev + 5);
-    setTotalServiceCharge(prev => prev + 0.25);
 
-    // Determine game mode
-    const gameMode: GameMode = myBetDirection === opponentDirection ? 'same_side' : 'opposite';
+    const pot = agreedBetAmount * 2;
+    const serviceCharge = (agreedBetAmount * SERVICE_CHARGE_PERCENT) / 100 * 2;
 
-    let hostCorrect = false;
-    let challengerCorrect = false;
+    // Determine winner
+    const hostCorrect = (myBetDirection === 'buy' && priceWentUp) || (myBetDirection === 'sell' && !priceWentUp);
+    const challengerCorrect = (opponentDirection === 'buy' && priceWentUp) || (opponentDirection === 'sell' && !priceWentUp);
+
     let winner = 'Draw';
     let winnerPayout = '0.00';
 
-    if (gameMode === 'opposite') {
-      // Standard: whoever predicted correctly wins
-      hostCorrect = (myBetDirection === 'buy' && priceWentUp) || (myBetDirection === 'sell' && !priceWentUp);
-      challengerCorrect = (opponentDirection === 'buy' && priceWentUp) || (opponentDirection === 'sell' && !priceWentUp);
-
-      if (hostCorrect && !challengerCorrect) {
-        winner = 'host';
-        winnerPayout = pot.toFixed(2);
-        setBalance(prev => prev + pot);
-        setScores(prev => {
-          const newScores = { ...prev, host: prev.host + 1 };
-          saveScores(newScores);
-          return newScores;
-        });
-        setLeaderboard(prev => updateLeaderboard(prev, PLAYER_ID, PLAYER_NAME, true, pot));
-      } else if (!hostCorrect && challengerCorrect) {
-        winner = 'challenger';
-        winnerPayout = pot.toFixed(2);
-        setScores(prev => {
-          const newScores = { ...prev, challenger: prev.challenger + 1 };
-          saveScores(newScores);
-          return newScores;
-        });
-        setLeaderboard(prev => updateLeaderboard(prev, PLAYER_ID, PLAYER_NAME, false, -hostBet));
-      } else if (hostCorrect && challengerCorrect) {
-        const splitAmount = pot / 2;
-        winnerPayout = splitAmount.toFixed(2);
-        setBalance(prev => prev + splitAmount);
-        setLeaderboard(prev => updateLeaderboard(prev, PLAYER_ID, PLAYER_NAME, true, splitAmount - hostBet));
-      } else {
-        winner = 'House';
-        setLeaderboard(prev => updateLeaderboard(prev, PLAYER_ID, PLAYER_NAME, false, -hostBet));
-      }
+    if (hostCorrect && !challengerCorrect) {
+      winner = 'host';
+      winnerPayout = pot.toFixed(2);
+      setBalance(prev => prev + pot);
+      setScores(prev => {
+        const newScores = { ...prev, host: prev.host + 1 };
+        saveScores(newScores);
+        return newScores;
+      });
+      setLeaderboard(prev => updateLeaderboard(prev, PLAYER_ID, PLAYER_NAME, true, pot - agreedBetAmount));
+    } else if (!hostCorrect && challengerCorrect) {
+      winner = 'challenger';
+      winnerPayout = pot.toFixed(2);
+      setScores(prev => {
+        const newScores = { ...prev, challenger: prev.challenger + 1 };
+        saveScores(newScores);
+        return newScores;
+      });
+      setLeaderboard(prev => updateLeaderboard(prev, PLAYER_ID, PLAYER_NAME, false, -agreedBetAmount));
     } else {
-      // Same side: duel on magnitude of change
-      // Both bet same direction, winner is whoever bet more (higher risk)
-      if (hostBet > 5) {
-        winner = 'host';
-        winnerPayout = pot.toFixed(2);
-        setBalance(prev => prev + pot);
-        setScores(prev => {
-          const newScores = { ...prev, host: prev.host + 1 };
-          saveScores(newScores);
-          return newScores;
-        });
-        setLeaderboard(prev => updateLeaderboard(prev, PLAYER_ID, PLAYER_NAME, true, pot));
-      } else {
-        winner = 'challenger';
-        winnerPayout = pot.toFixed(2);
-        setScores(prev => {
-          const newScores = { ...prev, challenger: prev.challenger + 1 };
-          saveScores(newScores);
-          return newScores;
-        });
-        setLeaderboard(prev => updateLeaderboard(prev, PLAYER_ID, PLAYER_NAME, false, -hostBet));
-      }
-      hostCorrect = priceWentUp === (myBetDirection === 'buy');
-      challengerCorrect = priceWentUp === (opponentDirection === 'buy');
+      // Both correct or both wrong - split pot
+      const splitAmount = pot / 2;
+      winnerPayout = splitAmount.toFixed(2);
+      setBalance(prev => prev + splitAmount);
+      setLeaderboard(prev => updateLeaderboard(prev, PLAYER_ID, PLAYER_NAME, true, splitAmount - agreedBetAmount));
     }
 
     const gameResult: GameResult = {
@@ -483,15 +435,14 @@ export default function App() {
       winner,
       winnerPayout,
       pot: pot.toFixed(2),
-      serviceChargeCollected: totalServiceCharge.toFixed(2),
-      gameMode,
+      serviceChargeCollected: serviceCharge.toFixed(2),
       hostScore: scores.host + (winner === 'host' ? 1 : 0),
       challengerScore: scores.challenger + (winner === 'challenger' ? 1 : 0),
     };
 
     setDemoResult(gameResult);
     setCountdown(8);
-  }, [currentPrice, openPrice, myBetDirection, pot, totalServiceCharge, hostBet, scores]);
+  }, [currentPrice, openPrice, myBetDirection, agreedBetAmount, scores]);
 
   const handleDeposit = useCallback((amount: number, method: string) => {
     if (connected && socket) {
@@ -503,8 +454,8 @@ export default function App() {
     setTimeout(() => setMessage(''), 3000);
   }, [connected, socket]);
 
-  const placeBet = useCallback(() => {
-    if (!socket || !betAmount || !myBetDirection) return;
+  const proposeBetAmount = useCallback(() => {
+    if (!socket || !betAmount) return;
     const amount = parseFloat(betAmount);
     if (isNaN(amount) || amount <= 0) {
       setBetError('Invalid bet amount');
@@ -518,9 +469,16 @@ export default function App() {
       setBetError('Insufficient balance');
       return;
     }
-    socket.emit('place_bet', { amount, direction: myBetDirection });
+    socket.emit('propose_bet_amount', amount);
     setBetError('');
-  }, [socket, betAmount, balance, myBetDirection]);
+    setMessage(`Proposed bet: $${amount.toFixed(2)} - Waiting for opponent to accept...`);
+  }, [socket, betAmount, balance]);
+
+  const acceptBetAmount = useCallback(() => {
+    if (!socket || !myBetDirection) return;
+    socket.emit('accept_bet_and_direction', { direction: myBetDirection });
+    setBetError('');
+  }, [socket, myBetDirection]);
 
   const placeDemoBet = useCallback(() => {
     if (!betAmount || !myBetDirection) return;
@@ -532,12 +490,9 @@ export default function App() {
 
     const serviceCharge = (amount * SERVICE_CHARGE_PERCENT) / 100;
     setBalance(prev => prev - amount - serviceCharge);
-    setHostBet(amount);
     setHostBetDirection(myBetDirection);
-    setHostServiceCharge(serviceCharge);
     setHostBetPlaced(true);
-    setPot(prev => prev + amount);
-    setTotalServiceCharge(prev => prev + serviceCharge);
+    setAgreedBetAmount(amount);
     setBetError('');
 
     // Start countdown
@@ -564,8 +519,7 @@ export default function App() {
   };
 
   const displayResult = result || demoResult;
-  const myBet = hostBet;
-  const myBetPlaced = hostBetPlaced;
+  const pot = agreedBetAmount * 2;
 
   return (
     <div className="min-h-screen bg-[#0a0e14] text-white font-mono flex flex-col">
@@ -726,21 +680,20 @@ export default function App() {
             </div>
           )}
 
-          {/* Pot & Service Charge */}
-          {(pot > 0 || totalServiceCharge > 0) && (
+          {/* Pot Display */}
+          {agreedBetAmount > 0 && (
             <div className="p-4 border-b border-gray-800 bg-gradient-to-r from-green-900/10 to-blue-900/10">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-gray-400">💰 Total Pot</span>
                 <span className="text-xl font-bold text-green-400">${pot.toFixed(2)}</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-400">🏦 Service Fee ({SERVICE_CHARGE_PERCENT}%)</span>
-                <span className="text-sm font-bold text-amber-400">${totalServiceCharge.toFixed(2)}</span>
+              <div className="text-xs text-gray-500 text-center">
+                ${agreedBetAmount.toFixed(2)} each • Winner takes all!
               </div>
             </div>
           )}
 
-          {/* Players Panel with Bet Directions */}
+          {/* Players Panel */}
           <div className="p-4 border-b border-gray-800">
             <h3 className="text-xs text-gray-500 mb-3 uppercase tracking-wider">Players</h3>
             <div className="space-y-2">
@@ -750,9 +703,9 @@ export default function App() {
                     <span className="text-blue-400">👑</span>
                     <span className="text-sm font-bold">Host</span>
                   </div>
-                  {hostBetPlaced && (
+                  {agreedBetAmount > 0 && (
                     <span className="text-xs px-2 py-0.5 rounded bg-blue-600 text-white">
-                      ${hostBet.toFixed(2)}
+                      ${agreedBetAmount.toFixed(2)}
                     </span>
                   )}
                 </div>
@@ -768,9 +721,9 @@ export default function App() {
                     <span className="text-purple-400">⚔️</span>
                     <span className="text-sm font-bold">Challenger</span>
                   </div>
-                  {challengerBetPlaced && (
+                  {agreedBetAmount > 0 && (
                     <span className="text-xs px-2 py-0.5 rounded bg-purple-600 text-white">
-                      ${challengerBet.toFixed(2)}
+                      ${agreedBetAmount.toFixed(2)}
                     </span>
                   )}
                 </div>
@@ -783,7 +736,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Betting Phase - Choose Direction and Amount */}
+          {/* Waiting State */}
           {gameStatus === 'waiting' && (
             <div className="p-4 border-b border-gray-800">
               <div className="text-center py-6">
@@ -795,7 +748,7 @@ export default function App() {
                   <button
                     onClick={() => {
                       setGameStatus('setup');
-                      setMessage('Choose your position and bet amount!');
+                      setMessage('Choose your bet amount and position!');
                     }}
                     className="mt-4 px-6 py-2 bg-gradient-to-r from-amber-600 to-orange-600 text-white text-sm font-bold rounded hover:from-amber-500 hover:to-orange-500 transition-all"
                   >
@@ -806,44 +759,18 @@ export default function App() {
             </div>
           )}
 
+          {/* Betting Phase */}
           {gameStatus === 'setup' && (
             <div className="p-4 border-b border-gray-800">
-              <h3 className="text-xs text-gray-500 mb-3 uppercase tracking-wider">Choose Your Position</h3>
-              <p className="text-xs text-gray-400 mb-4">
-                Will BTC price go <span className="text-green-400 font-bold">UP</span> or <span className="text-red-400 font-bold">DOWN</span>?
-              </p>
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                <button
-                  onClick={() => setMyBetDirection('buy')}
-                  className={`py-4 rounded-lg font-bold transition-all flex flex-col items-center gap-2 border-2 ${
-                    myBetDirection === 'buy'
-                      ? 'bg-gradient-to-br from-green-600 to-emerald-700 text-white border-green-400 scale-105'
-                      : 'bg-gray-800 text-gray-400 border-gray-700 hover:border-green-600'
-                  }`}
-                >
-                  <span className="text-3xl">📈</span>
-                  <span className="text-lg">BUY</span>
-                  <span className="text-xs opacity-75">Price goes UP</span>
-                </button>
-                <button
-                  onClick={() => setMyBetDirection('sell')}
-                  className={`py-4 rounded-lg font-bold transition-all flex flex-col items-center gap-2 border-2 ${
-                    myBetDirection === 'sell'
-                      ? 'bg-gradient-to-br from-red-600 to-rose-700 text-white border-red-400 scale-105'
-                      : 'bg-gray-800 text-gray-400 border-gray-700 hover:border-red-600'
-                  }`}
-                >
-                  <span className="text-3xl">📉</span>
-                  <span className="text-lg">SELL</span>
-                  <span className="text-xs opacity-75">Price goes DOWN</span>
-                </button>
-              </div>
-
-              {myBetDirection && (
+              {/* Step 1: Agree on bet amount */}
+              {agreedBetAmount === 0 && (
                 <>
-                  <h3 className="text-xs text-gray-500 mb-3 uppercase tracking-wider">Bet Amount</h3>
+                  <h3 className="text-xs text-gray-500 mb-3 uppercase tracking-wider">Step 1: Agree on Bet Amount</h3>
                   <p className="text-xs text-gray-400 mb-2">
-                    Max: <span className="text-green-400 font-bold">${MAX_BET}</span> | Fee: <span className="text-amber-400 font-bold">{SERVICE_CHARGE_PERCENT}%</span>
+                    Both players must bet the <span className="text-green-400 font-bold">SAME amount</span>
+                  </p>
+                  <p className="text-xs text-gray-400 mb-3">
+                    Max: <span className="text-green-400 font-bold">${MAX_BET}</span> | Fee: <span className="text-amber-400 font-bold">{SERVICE_CHARGE_PERCENT}%</span> per player
                   </p>
                   {betError && (
                     <div className="mb-2 px-3 py-2 bg-red-900/30 border border-red-700/50 rounded text-xs text-red-400">
@@ -861,18 +788,85 @@ export default function App() {
                       className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
                     />
                     <button
-                      onClick={connected ? placeBet : placeDemoBet}
+                      onClick={connected ? proposeBetAmount : () => setAgreedBetAmount(parseFloat(betAmount))}
                       disabled={!betAmount}
                       className="px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 text-white text-sm font-bold rounded transition-all"
                     >
-                      Place Bet
+                      {connected ? 'Propose' : 'Set'}
                     </button>
                   </div>
                   {betAmount && (
                     <div className="mt-2 text-xs text-gray-400">
-                      Total cost: <span className="text-white">${(parseFloat(betAmount) + (parseFloat(betAmount) * SERVICE_CHARGE_PERCENT / 100)).toFixed(2)}</span>
+                      Your cost: <span className="text-white">${(parseFloat(betAmount) + (parseFloat(betAmount) * SERVICE_CHARGE_PERCENT / 100)).toFixed(2)}</span>
+                      {' '}(bet + fee)
                     </div>
                   )}
+                </>
+              )}
+
+              {/* Step 2: Choose direction */}
+              {agreedBetAmount > 0 && !myBetDirection && (
+                <>
+                  <h3 className="text-xs text-gray-500 mb-3 uppercase tracking-wider">Step 2: Choose Your Position</h3>
+                  <p className="text-xs text-gray-400 mb-4">
+                    Will BTC price go <span className="text-green-400 font-bold">UP</span> or <span className="text-red-400 font-bold">DOWN</span>?
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => {
+                        setMyBetDirection('buy');
+                        if (!connected) {
+                          placeDemoBet();
+                        }
+                      }}
+                      className="py-4 rounded-lg font-bold transition-all flex flex-col items-center gap-2 border-2 bg-gray-800 text-gray-400 border-gray-700 hover:border-green-600 hover:bg-gradient-to-br hover:from-green-600 hover:to-emerald-700 hover:text-white"
+                    >
+                      <span className="text-3xl">📈</span>
+                      <span className="text-lg">BUY</span>
+                      <span className="text-xs opacity-75">Price goes UP</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setMyBetDirection('sell');
+                        if (!connected) {
+                          placeDemoBet();
+                        }
+                      }}
+                      className="py-4 rounded-lg font-bold transition-all flex flex-col items-center gap-2 border-2 bg-gray-800 text-gray-400 border-gray-700 hover:border-red-600 hover:bg-gradient-to-br hover:from-red-600 hover:to-rose-700 hover:text-white"
+                    >
+                      <span className="text-3xl">📉</span>
+                      <span className="text-lg">SELL</span>
+                      <span className="text-xs opacity-75">Price goes DOWN</span>
+                    </button>
+                  </div>
+                  <div className="mt-3 text-xs text-center text-gray-500">
+                    Bet amount: <span className="text-green-400 font-bold">${agreedBetAmount.toFixed(2)}</span>
+                  </div>
+                </>
+              )}
+
+              {/* Direction chosen, waiting for multiplayer */}
+              {agreedBetAmount > 0 && myBetDirection && connected && (
+                <>
+                  <div className={`p-4 rounded-lg border-2 ${
+                    myBetDirection === 'buy' ? 'bg-green-900/20 border-green-700/50' : 'bg-red-900/20 border-red-700/50'
+                  }`}>
+                    <div className="text-center">
+                      <div className="text-3xl mb-2">
+                        {myBetDirection === 'buy' ? '📈' : '📉'}
+                      </div>
+                      <div className={`text-lg font-bold ${myBetDirection === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
+                        {myBetDirection === 'buy' ? 'BUY (UP)' : 'SELL (DOWN)'}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1">✓ Position Locked</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={acceptBetAmount}
+                    className="w-full mt-3 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white text-sm font-bold rounded transition-all"
+                  >
+                    Confirm & Start Duel
+                  </button>
                 </>
               )}
             </div>
@@ -886,15 +880,7 @@ export default function App() {
                 <div className="text-xl font-bold mb-2">
                   {displayResult.winner === 'host' && <span className="text-blue-400">🏆 YOU WIN!</span>}
                   {displayResult.winner === 'challenger' && <span className="text-purple-400">💀 CHALLENGER WINS</span>}
-                  {displayResult.winner === 'Draw' && <span className="text-yellow-400">🤝 DRAW</span>}
-                  {displayResult.winner === 'House' && <span className="text-gray-400">🏦 HOUSE WINS</span>}
-                </div>
-
-                {/* Game Mode */}
-                <div className="my-3 p-2 bg-gray-800/50 rounded">
-                  <div className="text-xs text-gray-400">
-                    {displayResult.gameMode === 'opposite' ? '⚔️ Opposite Positions Duel' : '🤝 Same Side Duel (Higher Bet Wins)'}
-                  </div>
+                  {displayResult.winner === 'Draw' && <span className="text-yellow-400">🤝 DRAW - POT SPLIT</span>}
                 </div>
 
                 {/* Price Movement */}
@@ -930,6 +916,10 @@ export default function App() {
                     <span className="text-sm text-green-400">Winner Gets</span>
                     <span className="text-sm text-green-300 font-bold">${displayResult.winnerPayout}</span>
                   </div>
+                  <div className="flex justify-between items-center px-3 py-2 bg-amber-900/20 rounded border border-amber-800/30">
+                    <span className="text-sm text-amber-400">Service Fee</span>
+                    <span className="text-sm text-amber-300 font-bold">${displayResult.serviceChargeCollected}</span>
+                  </div>
                 </div>
 
                 {countdown > 0 && (
@@ -945,9 +935,7 @@ export default function App() {
                       setMyBetDirection(null);
                       setHostBetPlaced(false);
                       setChallengerBetPlaced(false);
-                      setHostBet(0);
-                      setPot(0);
-                      setTotalServiceCharge(0);
+                      setAgreedBetAmount(0);
                       setHostBetDirection(null);
                       setChallengerBetDirection(null);
                       setBetAmount('');
@@ -1008,7 +996,7 @@ export default function App() {
               </h4>
               <p className="text-xs text-gray-400 mt-1">
                 {demoMode
-                  ? `Choose BUY or SELL! Timer: ${timerDuration}s | Max bet: $${MAX_BET}`
+                  ? `Same bet amount! Winner takes all! Timer: ${timerDuration}s`
                   : 'Start the backend server on port 3000 to play multiplayer.'
                 }
               </p>

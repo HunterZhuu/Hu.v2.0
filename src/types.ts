@@ -7,7 +7,6 @@ export interface CandleData {
 }
 
 export type TradeDirection = 'buy' | 'sell';
-export type GameMode = 'opposite' | 'same_side';
 
 export interface GameState {
   status: 'waiting' | 'setup' | 'betting' | 'predicting' | 'resolved';
@@ -17,7 +16,6 @@ export interface GameState {
   targetClosePrice: number | null;
   pot: number;
   serviceCharge: number;
-  gameMode: GameMode;
   scores: {
     host: number;
     challenger: number;
@@ -56,7 +54,6 @@ export interface GameResult {
   winnerPayout?: string;
   pot?: string;
   serviceChargeCollected?: string;
-  gameMode: GameMode;
   hostScore: number;
   challengerScore: number;
 }
