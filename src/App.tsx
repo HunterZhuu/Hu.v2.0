@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import PriceChart from './components/PriceChart';
 import PaymentModal from './components/PaymentModal';
 import Leaderboard from './components/Leaderboard';
+import RegistrationModal, { UserData } from './components/RegistrationModal';
 import { CandleData, GameResult, TradeDirection, LeaderboardEntry } from './types';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
@@ -204,6 +205,12 @@ export default function App() {
   // Leaderboard state
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+
+  // User registration state
+  const [currentUser, setCurrentUser] = useState<UserData | null>(null);
+  const [showRegistration, setShowRegistration] = useState(false);
+  const [selectedBetAmount, setSelectedBetAmount] = useState<number | null>(null);
+  const [customBetAmount, setCustomBetAmount] = useState('');
 
   // Demo mode data
   const demoData = useDemoMode(demoMode && !connected);
@@ -544,6 +551,26 @@ export default function App() {
             <span>🏆</span>
             <span className="hidden sm:inline">Leaderboard</span>
           </button>
+          {!currentUser ? (
+            <button
+              onClick={() => setShowRegistration(true)}
+              className="px-3 py-1.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white text-xs font-bold rounded transition-all flex items-center gap-1"
+            >
+              <span>👤</span>
+              <span className="hidden sm:inline">Login/Register</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              {currentUser.isPremium && (
+                <span className="text-xs px-2 py-1 bg-gradient-to-r from-amber-600 to-yellow-600 text-white rounded font-bold">
+                  ⭐ Premium
+                </span>
+              )}
+              <span className="text-xs text-gray-400 hidden sm:inline">
+                {currentUser.username}
+              </span>
+            </div>
+          )}
           <div className={`flex items-center gap-2 text-sm ${getStatusColor()}`}>
             <span className={`w-2 h-2 rounded-full ${
               gameStatus === 'resolved' ? 'bg-blue-400 animate-pulse' :
@@ -762,43 +789,126 @@ export default function App() {
           {/* Betting Phase */}
           {gameStatus === 'setup' && (
             <div className="p-4 border-b border-gray-800">
-              {/* Step 1: Agree on bet amount */}
+              {/* Step 1: Choose bet amount */}
               {agreedBetAmount === 0 && (
                 <>
-                  <h3 className="text-xs text-gray-500 mb-3 uppercase tracking-wider">Step 1: Agree on Bet Amount</h3>
-                  <p className="text-xs text-gray-400 mb-2">
-                    Both players must bet the <span className="text-green-400 font-bold">SAME amount</span>
-                  </p>
+                  <h3 className="text-xs text-gray-500 mb-3 uppercase tracking-wider">Step 1: Choose Bet Amount</h3>
                   <p className="text-xs text-gray-400 mb-3">
-                    Max: <span className="text-green-400 font-bold">${MAX_BET}</span> | Fee: <span className="text-amber-400 font-bold">{SERVICE_CHARGE_PERCENT}%</span> per player
+                    Select a preset amount or use custom (Premium only)
                   </p>
+                  
+                  {/* Preset Bet Buttons */}
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    <button
+                      onClick={() => {
+                        setSelectedBetAmount(10);
+                        if (!connected) {
+                          setAgreedBetAmount(10);
+                        } else {
+                          socket?.emit('propose_bet_amount', 10);
+                        }
+                      }}
+                      className="py-4 bg-gradient-to-br from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-bold rounded-lg transition-all border-2 border-blue-500/30 hover:border-blue-400/60 hover:scale-105"
+                    >
+                      <div className="text-2xl">$10</div>
+                      <div className="text-xs opacity-75">Standard</div>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedBetAmount(15);
+                        if (!connected) {
+                          setAgreedBetAmount(15);
+                        } else {
+                          socket?.emit('propose_bet_amount', 15);
+                        }
+                      }}
+                      className="py-4 bg-gradient-to-br from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white font-bold rounded-lg transition-all border-2 border-purple-500/30 hover:border-purple-400/60 hover:scale-105"
+                    >
+                      <div className="text-2xl">$15</div>
+                      <div className="text-xs opacity-75">Popular</div>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedBetAmount(20);
+                        if (!connected) {
+                          setAgreedBetAmount(20);
+                        } else {
+                          socket?.emit('propose_bet_amount', 20);
+                        }
+                      }}
+                      className="py-4 bg-gradient-to-br from-green-600 to-green-700 hover:from-green-500 hover:to-green-600 text-white font-bold rounded-lg transition-all border-2 border-green-500/30 hover:border-green-400/60 hover:scale-105"
+                    >
+                      <div className="text-2xl">$20</div>
+                      <div className="text-xs opacity-75">High Roller</div>
+                    </button>
+                  </div>
+
+                  {/* Custom Bet Button */}
+                  <button
+                    onClick={() => {
+                      if (currentUser?.isPremium) {
+                        // Show custom bet input
+                        setSelectedBetAmount(null);
+                      } else {
+                        // Show registration modal
+                        setShowRegistration(true);
+                      }
+                    }}
+                    className={`w-full py-3 rounded-lg font-bold transition-all border-2 ${
+                      currentUser?.isPremium
+                        ? 'bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-white border-amber-500/30 hover:border-amber-400/60'
+                        : 'bg-gray-800 text-gray-400 border-gray-700 hover:border-amber-600'
+                    }`}
+                  >
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="text-xl">{currentUser?.isPremium ? '⭐' : '🔒'}</span>
+                      <span>Custom Amount</span>
+                      {!currentUser?.isPremium && <span className="text-xs">(Premium)</span>}
+                    </div>
+                  </button>
+
+                  {/* Custom Bet Input (only for premium users) */}
+                  {selectedBetAmount === null && currentUser?.isPremium && (
+                    <div className="mt-3 space-y-2">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="1"
+                        value={customBetAmount}
+                        onChange={(e) => setCustomBetAmount(e.target.value)}
+                        placeholder="Enter custom amount"
+                        className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-amber-500"
+                      />
+                      <button
+                        onClick={() => {
+                          const amount = parseFloat(customBetAmount);
+                          if (amount > 0 && amount <= balance) {
+                            if (!connected) {
+                              setAgreedBetAmount(amount);
+                            } else {
+                              socket?.emit('propose_bet_amount', amount);
+                            }
+                          }
+                        }}
+                        disabled={!customBetAmount}
+                        className="w-full py-2 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 text-white text-sm font-bold rounded transition-all"
+                      >
+                        Set Custom Amount
+                      </button>
+                    </div>
+                  )}
+
                   {betError && (
-                    <div className="mb-2 px-3 py-2 bg-red-900/30 border border-red-700/50 rounded text-xs text-red-400">
+                    <div className="mt-2 px-3 py-2 bg-red-900/30 border border-red-700/50 rounded text-xs text-red-400">
                       {betError}
                     </div>
                   )}
-                  <div className="flex gap-2">
-                    <input
-                      type="number"
-                      step="0.01"
-                      max={MAX_BET}
-                      value={betAmount}
-                      onChange={(e) => setBetAmount(e.target.value)}
-                      placeholder={`Max $${MAX_BET}`}
-                      className="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-green-500"
-                    />
-                    <button
-                      onClick={connected ? proposeBetAmount : () => setAgreedBetAmount(parseFloat(betAmount))}
-                      disabled={!betAmount}
-                      className="px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 text-white text-sm font-bold rounded transition-all"
-                    >
-                      {connected ? 'Propose' : 'Set'}
-                    </button>
-                  </div>
-                  {betAmount && (
-                    <div className="mt-2 text-xs text-gray-400">
-                      Your cost: <span className="text-white">${(parseFloat(betAmount) + (parseFloat(betAmount) * SERVICE_CHARGE_PERCENT / 100)).toFixed(2)}</span>
-                      {' '}(bet + fee)
+
+                  {selectedBetAmount && (
+                    <div className="mt-3 text-xs text-gray-400 text-center">
+                      Selected: <span className="text-white font-bold">${selectedBetAmount}</span> | 
+                      Fee: <span className="text-amber-400">${(selectedBetAmount * SERVICE_CHARGE_PERCENT / 100).toFixed(2)}</span> | 
+                      Total: <span className="text-green-400">${(selectedBetAmount + selectedBetAmount * SERVICE_CHARGE_PERCENT / 100).toFixed(2)}</span>
                     </div>
                   )}
                 </>
@@ -1011,6 +1121,19 @@ export default function App() {
         onClose={() => setShowPaymentModal(false)}
         onDeposit={handleDeposit}
         currentBalance={balance}
+      />
+
+      {/* Registration Modal */}
+      <RegistrationModal
+        isOpen={showRegistration}
+        onClose={() => setShowRegistration(false)}
+        onRegister={(userData) => {
+          setCurrentUser(userData);
+          setBalance(userData.balance);
+          setShowRegistration(false);
+          setMessage(`Welcome${userData.isPremium ? ' Premium' : ''} member! You now have $${userData.balance}`);
+          setTimeout(() => setMessage(''), 3000);
+        }}
       />
     </div>
   );

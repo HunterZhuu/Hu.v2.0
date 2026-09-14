@@ -8,6 +8,22 @@ export interface CandleData {
 
 export type TradeDirection = 'buy' | 'sell';
 
+export interface UserData {
+  id: string;
+  email: string;
+  username: string;
+  password: string;
+  isPremium: boolean;
+  walletAddress?: string;
+  bankAccount?: {
+    accountNumber: string;
+    bankName: string;
+    accountHolder: string;
+  };
+  balance: number;
+  createdAt: string;
+}
+
 export interface GameState {
   status: 'waiting' | 'setup' | 'betting' | 'predicting' | 'resolved';
   asset: string;
