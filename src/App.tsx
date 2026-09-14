@@ -95,80 +95,130 @@ function saveScores(scores: { host: number; challenger: number }) {
   } catch {}
 }
 
-// Demo mode: simulate price data
-function useDemoMode(enabled: boolean) {
+// Real-time price fetching for demo mode (no server needed)
+function useDemoMode(enabled: boolean, selectedAsset: TradingAsset) {
   const [candles, setCandles] = useState<CandleData[]>([]);
-  const [currentPrice, setCurrentPrice] = useState(67500);
+  const [currentPrice, setCurrentPrice] = useState(0);
+  const [dataSource, setDataSource] = useState('Loading...');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastPriceRef = useRef<number>(0);
 
   useEffect(() => {
     if (!enabled) return;
 
-    const basePrice = 67500;
-    const initialCandles: CandleData[] = [];
-    let price = basePrice;
-    const now = Math.floor(Date.now() / 1000);
+    let cancelled = false;
 
-    for (let i = 30; i > 0; i--) {
-      const open = price;
-      const change = (Math.random() - 0.5) * 50;
-      const close = open + change;
-      const high = Math.max(open, close) + Math.random() * 20;
-      const low = Math.min(open, close) - Math.random() * 20;
-      initialCandles.push({
-        time: now - i * 60,
-        open: parseFloat(open.toFixed(2)),
-        high: parseFloat(high.toFixed(2)),
-        low: parseFloat(low.toFixed(2)),
-        close: parseFloat(close.toFixed(2)),
-      });
-      price = close;
-    }
+    const fetchRealPrice = async () => {
+      try {
+        let price = 0;
+        let source = '';
 
-    setCandles(initialCandles);
-    setCurrentPrice(price);
-
-    intervalRef.current = setInterval(() => {
-      setCurrentPrice((prev) => {
-        const change = (Math.random() - 0.5) * 30;
-        const newPrice = prev + change;
-        const now = Math.floor(Date.now() / 1000);
-        const candleTime = now - (now % 60);
-
-        setCandles((prevCandles) => {
-          const newCandles = [...prevCandles];
-          const lastCandle = newCandles[newCandles.length - 1];
-
-          if (lastCandle && lastCandle.time === candleTime) {
-            newCandles[newCandles.length - 1] = {
-              ...lastCandle,
-              close: parseFloat(newPrice.toFixed(2)),
-              high: parseFloat(Math.max(lastCandle.high, newPrice).toFixed(2)),
-              low: parseFloat(Math.min(lastCandle.low, newPrice).toFixed(2)),
-            };
-          } else {
-            newCandles.push({
-              time: candleTime,
-              open: parseFloat(prev.toFixed(2)),
-              high: parseFloat(Math.max(prev, newPrice).toFixed(2)),
-              low: parseFloat(Math.min(prev, newPrice).toFixed(2)),
-              close: parseFloat(newPrice.toFixed(2)),
-            });
-            if (newCandles.length > 60) newCandles.shift();
+        if (selectedAsset.category === 'crypto') {
+          // Use CoinGecko free API for crypto (no key needed)
+          const coinMap: Record<string, string> = {
+            'btc': 'bitcoin',
+            'eth': 'ethereum',
+            'bnb': 'binancecoin',
+            'sol': 'solana',
+            'xrp': 'ripple',
+            'ada': 'cardano',
+            'doge': 'dogecoin'
+          };
+          
+          const coinId = coinMap[selectedAsset.id] || 'bitcoin';
+          const response = await fetch(
+            `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd&include_24hr_change=true`
+          );
+          const data = await response.json();
+          
+          if (data[coinId]?.usd) {
+            price = data[coinId].usd;
+            source = 'CoinGecko';
           }
-          return newCandles;
-        });
+        } else if (selectedAsset.id === 'gold' || selectedAsset.id === 'silver') {
+          // Use free metals API
+          const metal = selectedAsset.id === 'gold' ? 'XAU' : 'XAG';
+          const response = await fetch(
+            `https://api.metalpriceapi.com/v1/latest?api_key=demo&base=USD&currencies=${metal}`
+          );
+          const data = await response.json();
+          
+          if (data.rates && data.rates[metal]) {
+            price = 1 / data.rates[metal]; // Convert to USD per oz
+            source = 'MetalPriceAPI';
+          }
+        } else if (selectedAsset.id === 'oil') {
+          // Use free oil price API
+          const response = await fetch(
+            'https://api.api-ninjas.com/v1/commodityprice?name=crude_oil',
+            { headers: { 'X-Api-Key': 'demo' } }
+          );
+          const data = await response.json();
+          
+          if (data.price) {
+            price = data.price;
+            source = 'API Ninjas';
+          }
+        }
 
-        return parseFloat(newPrice.toFixed(2));
-      });
-    }, 1000);
+        if (price > 0 && !cancelled) {
+          lastPriceRef.current = price;
+          setCurrentPrice(price);
+          setDataSource(source);
+          
+          const now = Math.floor(Date.now() / 1000);
+          const candleTime = now - (now % 60);
+
+          setCandles((prevCandles) => {
+            const newCandles = [...prevCandles];
+            const lastCandle = newCandles[newCandles.length - 1];
+
+            if (lastCandle && lastCandle.time === candleTime) {
+              newCandles[newCandles.length - 1] = {
+                ...lastCandle,
+                close: parseFloat(price.toFixed(selectedAsset.pricePrecision)),
+                high: parseFloat(Math.max(lastCandle.high, price).toFixed(selectedAsset.pricePrecision)),
+                low: parseFloat(Math.min(lastCandle.low, price).toFixed(selectedAsset.pricePrecision)),
+              };
+            } else {
+              newCandles.push({
+                time: candleTime,
+                open: parseFloat(price.toFixed(selectedAsset.pricePrecision)),
+                high: parseFloat(price.toFixed(selectedAsset.pricePrecision)),
+                low: parseFloat(price.toFixed(selectedAsset.pricePrecision)),
+                close: parseFloat(price.toFixed(selectedAsset.pricePrecision)),
+              });
+              if (newCandles.length > 60) newCandles.shift();
+            }
+            return newCandles;
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching price:', error);
+        // If API fails, use last known price with small random variation
+        if (lastPriceRef.current > 0 && !cancelled) {
+          const variation = lastPriceRef.current * (Math.random() * 0.001 - 0.0005);
+          const newPrice = lastPriceRef.current + variation;
+          setCurrentPrice(parseFloat(newPrice.toFixed(selectedAsset.pricePrecision)));
+          setDataSource('Cached (API unavailable)');
+        }
+      }
+    };
+
+    // Initial fetch
+    fetchRealPrice();
+
+    // Fetch every 5 seconds for commodities, 10 seconds for crypto (rate limits)
+    const interval = selectedAsset.category === 'crypto' ? 10000 : 5000;
+    intervalRef.current = setInterval(fetchRealPrice, interval);
 
     return () => {
+      cancelled = true;
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [enabled]);
+  }, [enabled, selectedAsset.id]);
 
-  return { candles, currentPrice };
+  return { candles, currentPrice, dataSource };
 }
 
 export default function App() {
@@ -226,7 +276,7 @@ export default function App() {
   const [lastPriceUpdate, setLastPriceUpdate] = useState<number>(Date.now());
 
   // Demo mode data
-  const demoData = useDemoMode(demoMode && !connected);
+  const demoData = useDemoMode(demoMode && !connected, selectedAsset);
 
   // Load leaderboard and scores on mount
   useEffect(() => {

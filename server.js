@@ -12,90 +12,91 @@ app.use(express.static('public'));
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-// Available trading assets with real data sources
+// Configuration
+const MAX_BET = 10;
+const SERVICE_CHARGE_PERCENT = 5;
+const INITIAL_BALANCE = 100;
+
+// Twelve Data API (Free tier: 8 requests/minute, 800/day)
+// Get your free API key at: https://twelvedata.com/register
+const TWELVE_DATA_API_KEY = process.env.TWELVE_DATA_API_KEY || 'demo';
+
+// Trading assets with data sources
 const TRADING_ASSETS = {
-  // Cryptocurrencies - Binance WebSocket
+  // Cryptocurrencies - Binance WebSocket (real-time, no API key needed)
   btc: { 
-    symbol: 'btcusdt', 
+    symbol: 'BTC/USDT', 
     name: 'Bitcoin', 
     precision: 2,
     source: 'binance',
-    wsUrl: 'wss://stream.binance.com:9443/ws/btcusdt@kline_1m'
+    binanceSymbol: 'btcusdt'
   },
   eth: { 
-    symbol: 'ethusdt', 
+    symbol: 'ETH/USDT', 
     name: 'Ethereum', 
     precision: 2,
     source: 'binance',
-    wsUrl: 'wss://stream.binance.com:9443/ws/ethusdt@kline_1m'
+    binanceSymbol: 'ethusdt'
   },
   bnb: { 
-    symbol: 'bnbusdt', 
+    symbol: 'BNB/USDT', 
     name: 'Binance Coin', 
     precision: 2,
     source: 'binance',
-    wsUrl: 'wss://stream.binance.com:9443/ws/bnbusdt@kline_1m'
+    binanceSymbol: 'bnbusdt'
   },
   sol: { 
-    symbol: 'solusdt', 
+    symbol: 'SOL/USDT', 
     name: 'Solana', 
     precision: 2,
     source: 'binance',
-    wsUrl: 'wss://stream.binance.com:9443/ws/solusdt@kline_1m'
+    binanceSymbol: 'solusdt'
   },
   xrp: { 
-    symbol: 'xrpusdt', 
+    symbol: 'XRP/USDT', 
     name: 'Ripple', 
     precision: 4,
     source: 'binance',
-    wsUrl: 'wss://stream.binance.com:9443/ws/xrpusdt@kline_1m'
+    binanceSymbol: 'xrpusdt'
   },
   ada: { 
-    symbol: 'adausdt', 
+    symbol: 'ADA/USDT', 
     name: 'Cardano', 
     precision: 4,
     source: 'binance',
-    wsUrl: 'wss://stream.binance.com:9443/ws/adausdt@kline_1m'
+    binanceSymbol: 'adausdt'
   },
   doge: { 
-    symbol: 'dogeusdt', 
+    symbol: 'DOGE/USDT', 
     name: 'Dogecoin', 
     precision: 5,
     source: 'binance',
-    wsUrl: 'wss://stream.binance.com:9443/ws/dogeusdt@kline_1m'
+    binanceSymbol: 'dogeusdt'
   },
   
-  // Commodities - Real API data
+  // Commodities - Twelve Data API (free tier, real-time)
   gold: { 
     symbol: 'XAU/USD', 
     name: 'Gold', 
     precision: 2,
-    source: 'metals-api',
-    apiEndpoint: 'https://www.goldapi.io/api/XAU/USD',
-    lastPrice: 2650.00
+    source: 'twelvedata',
+    twelveDataSymbol: 'XAU/USD'
   },
   silver: { 
     symbol: 'XAG/USD', 
     name: 'Silver', 
     precision: 3,
-    source: 'metals-api',
-    apiEndpoint: 'https://www.goldapi.io/api/XAG/USD',
-    lastPrice: 31.50
+    source: 'twelvedata',
+    twelveDataSymbol: 'XAG/USD'
   },
   oil: { 
     symbol: 'WTI/USD', 
-    name: 'Crude Oil', 
+    name: 'Crude Oil WTI', 
     precision: 2,
-    source: 'commodity-api',
-    apiEndpoint: 'https://api.commoditypriceapi.com/v1/latest?api_key=demo&symbol=WTI',
-    lastPrice: 71.50
+    source: 'twelvedata',
+    twelveDataSymbol: 'WTI/USD'
   }
 };
-
-// Configuration
-const MAX_BET = 10;
-const SERVICE_CHARGE_PERCENT = 5;
-const INITIAL_BALANCE = 100;
 
 // Game State
 let gameState = {
@@ -130,11 +131,13 @@ let gameState = {
     }
 };
 
-// Active WebSocket connections
+// Active connections
 const assetConnections = {};
 let currentAsset = 'btc';
+let lastCommodityFetch = 0;
+const COMMODITY_FETCH_INTERVAL = 5000; // 5 seconds for faster updates
 
-// Connect to Binance WebSocket for crypto assets
+// Connect to Binance WebSocket for crypto
 function connectToCryptoAsset(assetId) {
     const asset = TRADING_ASSETS[assetId];
     if (!asset || asset.source !== 'binance') return;
@@ -143,20 +146,20 @@ function connectToCryptoAsset(assetId) {
         assetConnections[assetId].close();
     }
 
-    console.log(`🔌 Connecting to ${asset.name} (${asset.symbol}) via Binance WebSocket...`);
+    const wsUrl = `wss://stream.binance.com:9443/ws/${asset.binanceSymbol}@kline_1m`;
+    console.log(`🔌 Connecting to ${asset.name} via Binance WebSocket...`);
     
-    const ws = new WebSocket(asset.wsUrl);
+    const ws = new WebSocket(wsUrl);
     let reconnectAttempts = 0;
-    const maxReconnectAttempts = 5;
 
     ws.on('open', () => {
-        console.log(`✅ Connected to ${asset.name} live price feed`);
+        console.log(`✅ Connected to ${asset.name} live feed (Binance)`);
         reconnectAttempts = 0;
         io.emit('data_source_update', { 
             assetId, 
             source: 'Binance', 
             status: 'live',
-            message: `Live data from ${asset.name}`
+            message: `Real-time data from Binance`
         });
     });
 
@@ -170,13 +173,11 @@ function connectToCryptoAsset(assetId) {
             const currentPrice = parseFloat(kline.c);
             gameState.currentOpenPrice = parseFloat(kline.o);
 
-            // If the candle just closed, resolve the game
             if (kline.x && gameState.status === 'resolved') {
                 gameState.targetClosePrice = currentPrice;
                 determineWinner();
             }
 
-            // Broadcast live price update
             io.emit('price_update', { 
                 time: kline.t / 1000, 
                 open: parseFloat(kline.o), 
@@ -194,22 +195,14 @@ function connectToCryptoAsset(assetId) {
 
     ws.on('error', (error) => {
         console.error(`❌ WebSocket error for ${asset.name}:`, error.message);
-        io.emit('data_source_update', { 
-            assetId, 
-            source: 'Binance', 
-            status: 'error',
-            message: `Connection error: ${error.message}`
-        });
     });
 
     ws.on('close', () => {
         console.log(`🔌 Disconnected from ${asset.name}`);
         delete assetConnections[assetId];
         
-        // Attempt reconnection
-        if (reconnectAttempts < maxReconnectAttempts && currentAsset === assetId) {
+        if (reconnectAttempts < 5 && currentAsset === assetId) {
             reconnectAttempts++;
-            console.log(`🔄 Reconnecting to ${asset.name} (attempt ${reconnectAttempts}/${maxReconnectAttempts})...`);
             setTimeout(() => connectToCryptoAsset(assetId), 2000);
         }
     });
@@ -217,115 +210,105 @@ function connectToCryptoAsset(assetId) {
     assetConnections[assetId] = ws;
 }
 
-// Fetch commodity prices from API
+// Fetch commodity price from Twelve Data
 async function fetchCommodityPrice(assetId) {
     const asset = TRADING_ASSETS[assetId];
-    if (!asset || asset.source === 'binance') return;
+    if (!asset || asset.source !== 'twelvedata') return;
+
+    const now = Date.now();
+    if (now - lastCommodityFetch < COMMODITY_FETCH_INTERVAL) {
+        return; // Rate limiting
+    }
+    lastCommodityFetch = now;
 
     try {
-        let response;
+        const url = `https://api.twelvedata.com/price?symbol=${asset.twelveDataSymbol}&apikey=${TWELVE_DATA_API_KEY}`;
+        const response = await axios.get(url, { timeout: 5000 });
         
-        if (assetId === 'gold' || assetId === 'silver') {
-            // Use GoldAPI.io for precious metals
-            response = await axios.get(asset.apiEndpoint, {
-                headers: {
-                    'x-access-token': process.env.GOLD_API_KEY || 'goldapi-demo',
-                    'Content-Type': 'application/json'
-                },
-                timeout: 5000
-            });
+        if (response.data && response.data.price) {
+            const price = parseFloat(response.data.price);
             
-            if (response.data && response.data.price) {
-                const price = parseFloat(response.data.price);
-                asset.lastPrice = price;
-                
-                io.emit('price_update', {
-                    time: Math.floor(Date.now() / 1000),
-                    open: price,
-                    high: price * 1.001,
-                    low: price * 0.999,
-                    close: price,
-                    source: 'GoldAPI.io',
-                    asset: assetId,
-                    timestamp: Date.now(),
-                    isCommodity: true
-                });
-                
-                console.log(`✅ ${asset.name}: $${price.toFixed(asset.precision)} (GoldAPI.io)`);
-            }
-        } else if (assetId === 'oil') {
-            // Use commodity price API for oil
-            response = await axios.get(asset.apiEndpoint, { timeout: 5000 });
-            
-            if (response.data && response.data.data && response.data.data.WTI) {
-                const price = parseFloat(response.data.data.WTI);
-                asset.lastPrice = price;
-                
-                io.emit('price_update', {
-                    time: Math.floor(Date.now() / 1000),
-                    open: price,
-                    high: price * 1.001,
-                    low: price * 0.999,
-                    close: price,
-                    source: 'CommodityPriceAPI',
-                    asset: assetId,
-                    timestamp: Date.now(),
-                    isCommodity: true
-                });
-                
-                console.log(`✅ ${asset.name}: $${price.toFixed(asset.precision)} (CommodityPriceAPI)`);
-            }
-        }
-        
-        io.emit('data_source_update', { 
-            assetId, 
-            source: asset.source === 'metals-api' ? 'GoldAPI.io' : 'CommodityPriceAPI',
-            status: 'live',
-            message: `Live data from ${asset.name}`
-        });
-        
-    } catch (error) {
-        console.error(`❌ Error fetching ${asset.name} price:`, error.message);
-        
-        // Use last known price as fallback
-        if (asset.lastPrice) {
             io.emit('price_update', {
-                time: Math.floor(Date.now() / 1000),
-                open: asset.lastPrice,
-                high: asset.lastPrice * 1.001,
-                low: asset.lastPrice * 0.999,
-                close: asset.lastPrice,
-                source: `${asset.source} (cached)`,
+                time: Math.floor(now / 1000),
+                open: price,
+                high: price * 1.0005,
+                low: price * 0.9995,
+                close: price,
+                source: 'Twelve Data',
                 asset: assetId,
-                timestamp: Date.now(),
-                isCommodity: true,
-                isCached: true
+                timestamp: now
+            });
+            
+            console.log(`✅ ${asset.name}: $${price.toFixed(asset.precision)} (Twelve Data)`);
+            
+            io.emit('data_source_update', { 
+                assetId, 
+                source: 'Twelve Data', 
+                status: 'live',
+                message: `Real-time data from Twelve Data`
             });
         }
+    } catch (error) {
+        console.error(`❌ Error fetching ${asset.name}:`, error.message);
         
-        io.emit('data_source_update', { 
-            assetId, 
-            source: asset.source,
-            status: 'error',
-            message: `Using cached price: ${error.message}`
-        });
+        // Try fallback to API Ninjas
+        try {
+            const fallbackMap = {
+                'gold': 'gold',
+                'silver': 'silver',
+                'oil': 'crude_oil'
+            };
+            
+            const ninjaSymbol = fallbackMap[assetId];
+            if (ninjaSymbol) {
+                const ninjaUrl = `https://api.api-ninjas.com/v1/commodityprice?name=${ninjaSymbol}`;
+                const ninjaResponse = await axios.get(ninjaUrl, {
+                    headers: { 'X-Api-Key': process.env.API_NINJAS_KEY || 'demo' },
+                    timeout: 5000
+                });
+                
+                if (ninjaResponse.data && ninjaResponse.data.price) {
+                    const price = parseFloat(ninjaResponse.data.price);
+                    
+                    io.emit('price_update', {
+                        time: Math.floor(now / 1000),
+                        open: price,
+                        high: price * 1.0005,
+                        low: price * 0.9995,
+                        close: price,
+                        source: 'API Ninjas (fallback)',
+                        asset: assetId,
+                        timestamp: now
+                    });
+                    
+                    console.log(`✅ ${asset.name}: $${price.toFixed(asset.precision)} (API Ninjas fallback)`);
+                }
+            }
+        } catch (fallbackError) {
+            console.error(`❌ Fallback also failed for ${asset.name}:`, fallbackError.message);
+            io.emit('data_source_update', { 
+                assetId, 
+                source: 'Error', 
+                status: 'error',
+                message: `Unable to fetch ${asset.name} price`
+            });
+        }
     }
 }
 
-// Start commodity price polling (every 10 seconds)
+// Start commodity polling
 function startCommodityPolling() {
     setInterval(async () => {
-        if (currentAsset === 'gold' || currentAsset === 'silver' || currentAsset === 'oil') {
+        if (currentAsset && TRADING_ASSETS[currentAsset]?.source === 'twelvedata') {
             await fetchCommodityPrice(currentAsset);
         }
-    }, 10000); // Poll every 10 seconds
+    }, COMMODITY_FETCH_INTERVAL);
 }
 
-// Switch to a different asset
+// Switch asset
 function switchAsset(assetId) {
     console.log(`🔄 Switching to ${TRADING_ASSETS[assetId].name}...`);
     
-    // Close existing crypto connection
     if (assetConnections[currentAsset]) {
         assetConnections[currentAsset].close();
     }
@@ -338,7 +321,6 @@ function switchAsset(assetId) {
     if (asset.source === 'binance') {
         connectToCryptoAsset(assetId);
     } else {
-        // Fetch commodity price immediately
         fetchCommodityPrice(assetId);
     }
     
@@ -390,13 +372,6 @@ function determineWinner() {
         const splitAmount = gameState.pot / 2;
         gameState.players.host.balance += splitAmount;
         gameState.players.challenger.balance += splitAmount;
-        if (hostCorrect && challengerCorrect) {
-            gameState.players.host.wins++;
-            gameState.players.challenger.wins++;
-        } else {
-            gameState.players.host.losses++;
-            gameState.players.challenger.losses++;
-        }
     }
 
     io.emit('game_resolved', {
@@ -405,15 +380,14 @@ function determineWinner() {
         priceChange: parseFloat(priceChange.toFixed(TRADING_ASSETS[currentAsset].precision)),
         hostBetDirection: host.betDirection,
         challengerBetDirection: challenger.betDirection,
-        hostCorrect: hostCorrect,
-        challengerCorrect: challengerCorrect,
-        winner: winner,
+        hostCorrect,
+        challengerCorrect,
+        winner,
         winnerPayout: winnerPayout.toFixed(2),
         pot: gameState.pot.toFixed(2),
         serviceChargeCollected: gameState.serviceCharge.toFixed(2),
         hostScore: gameState.scores.host + (winner === 'host' ? 1 : 0),
-        challengerScore: gameState.scores.challenger + (winner === 'challenger' ? 1 : 0),
-        dataSource: TRADING_ASSETS[currentAsset].source
+        challengerScore: gameState.scores.challenger + (winner === 'challenger' ? 1 : 0)
     });
 
     if (winner === 'host') gameState.scores.host++;
@@ -436,7 +410,6 @@ function determineWinner() {
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
-    // Send current asset info
     socket.emit('current_asset', {
         assetId: currentAsset,
         asset: {
@@ -447,23 +420,12 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Handle asset selection
     socket.on('select_asset', (assetId) => {
         if (TRADING_ASSETS[assetId]) {
             switchAsset(assetId);
-            socket.emit('asset_selected', { 
-                assetId, 
-                asset: {
-                    id: assetId,
-                    symbol: TRADING_ASSETS[assetId].symbol,
-                    name: TRADING_ASSETS[assetId].name,
-                    source: TRADING_ASSETS[assetId].source
-                }
-            });
         }
     });
 
-    // Assign roles
     if (!gameState.players.host.id) {
         gameState.players.host.id = socket.id;
         socket.emit('role_assigned', 'host');
@@ -472,46 +434,25 @@ io.on('connection', (socket) => {
         gameState.players.challenger.id = socket.id;
         socket.emit('role_assigned', 'challenger');
         socket.emit('balance_update', { balance: gameState.players.challenger.balance });
-        
         gameState.status = 'setup';
-        io.emit('game_started', { message: 'Both players joined! Agree on bet amount.' });
+        io.emit('game_started', { message: 'Both players joined!' });
     } else {
         socket.emit('room_full');
     }
 
-    // Handle bet amount proposal
     socket.on('propose_bet_amount', (amount) => {
         if (gameState.status !== 'setup') return;
-
         const bet = parseFloat(amount);
-        if (isNaN(bet) || bet <= 0) {
+        if (isNaN(bet) || bet <= 0 || bet > MAX_BET) {
             socket.emit('bet_error', 'Invalid bet amount');
             return;
         }
-
-        if (bet > MAX_BET) {
-            socket.emit('bet_error', `Maximum bet is $${MAX_BET}`);
-            return;
-        }
-
-        const player = socket.id === gameState.players.host.id ? 'host' : 'challenger';
-        if (bet > gameState.players[player].balance) {
-            socket.emit('bet_error', 'Insufficient balance');
-            return;
-        }
-
         gameState.agreedBetAmount = bet;
         io.emit('bet_amount_set', { amount: bet });
     });
 
-    // Handle bet acceptance with direction
     socket.on('accept_bet_and_direction', ({ direction }) => {
         if (gameState.status !== 'setup') return;
-        if (direction !== 'buy' && direction !== 'sell') {
-            socket.emit('bet_error', 'Invalid direction');
-            return;
-        }
-
         const player = socket.id === gameState.players.host.id ? 'host' : 'challenger';
         const bet = gameState.agreedBetAmount;
         const serviceCharge = calculateServiceCharge(bet);
@@ -519,53 +460,27 @@ io.on('connection', (socket) => {
         gameState.players[player].balance -= (bet + serviceCharge);
         gameState.players[player].bet = bet;
         gameState.players[player].betDirection = direction;
-        
         gameState.pot += bet;
         gameState.serviceCharge += serviceCharge;
 
         socket.emit('balance_update', { balance: gameState.players[player].balance });
-        io.emit('player_bet', { player: player, direction: direction });
+        io.emit('player_bet', { player, direction });
 
         if (gameState.players.host.bet > 0 && gameState.players.challenger.bet > 0) {
             gameState.status = 'resolved';
-            io.emit('both_bet', { 
-                message: 'Both players locked in! Winner takes all!',
-                pot: gameState.pot
-            });
+            io.emit('both_bet', { message: 'Both locked in!', pot: gameState.pot });
         }
-    });
-
-    // Handle deposit
-    socket.on('deposit', ({ amount, method }) => {
-        const depositAmount = parseFloat(amount);
-        if (isNaN(depositAmount) || depositAmount <= 0) {
-            socket.emit('deposit_error', 'Invalid deposit amount');
-            return;
-        }
-
-        if (socket.id === gameState.players.host.id) {
-            gameState.players.host.balance += depositAmount;
-            socket.emit('balance_update', { balance: gameState.players.host.balance });
-        } else if (socket.id === gameState.players.challenger.id) {
-            gameState.players.challenger.balance += depositAmount;
-            socket.emit('balance_update', { balance: gameState.players.challenger.balance });
-        }
-
-        socket.emit('deposit_success', { amount: depositAmount, method });
     });
 
     socket.on('disconnect', () => {
         if (socket.id === gameState.players.host.id) {
             gameState.players.host.id = null;
             gameState.players.host.balance = INITIAL_BALANCE;
-            gameState.players.host.betDirection = null;
         }
         if (socket.id === gameState.players.challenger.id) {
             gameState.players.challenger.id = null;
             gameState.players.challenger.balance = INITIAL_BALANCE;
-            gameState.players.challenger.betDirection = null;
         }
-        
         gameState.status = 'waiting';
         gameState.players.host.bet = 0;
         gameState.players.challenger.bet = 0;
@@ -582,9 +497,9 @@ startCommodityPolling();
 
 server.listen(3000, () => {
     console.log('🚀 PipDuel Server running on http://localhost:3000');
-    console.log('📊 Live data sources:');
-    console.log('  - Cryptocurrencies: Binance WebSocket (real-time)');
-    console.log('  - Gold & Silver: GoldAPI.io (10s polling)');
-    console.log('  - Oil: CommodityPriceAPI (10s polling)');
-    console.log(`💰 Max bet: $${MAX_BET} | Service charge: ${SERVICE_CHARGE_PERCENT}%`);
+    console.log('📊 Data Sources:');
+    console.log('  - Crypto: Binance WebSocket (real-time)');
+    console.log('  - Commodities: Twelve Data API (5s updates)');
+    console.log('💡 Get free Twelve Data API key: https://twelvedata.com/register');
+    console.log(`💰 Max bet: $${MAX_BET} | Fee: ${SERVICE_CHARGE_PERCENT}%`);
 });
