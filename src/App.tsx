@@ -5,11 +5,17 @@ import MarketOverview from './components/MarketOverview';
 import PlayerSearch, { Player, MOCK_PLAYERS } from './components/PlayerSearch';
 import UserProfile from './components/UserProfile';
 import ChallengeModal from './components/ChallengeModal';
+import Wallet from './components/Wallet';
+import DepositModal from './components/DepositModal';
+import PremiumModal from './components/PremiumModal';
 import { CandleData, GameResult, TradeDirection, TradingAsset, TRADING_ASSETS } from './types';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
 const SERVICE_FEE = 5;
+const PREMIUM_SERVICE_FEE = 3;
 const INITIAL_BALANCE = 100;
+const FREE_BET_LIMIT = 20;
+const PREMIUM_BET_LIMIT = 1000;
 
 // Current user (simulated)
 const CURRENT_USER: Player = {
@@ -55,6 +61,11 @@ export default function App() {
   const [showChallenge, setShowChallenge] = useState(false);
   const [challengedPlayer, setChallengedPlayer] = useState<Player | null>(null);
   const [activeTab, setActiveTab] = useState<'markets' | 'players'>('markets');
+  const [showWallet, setShowWallet] = useState(false);
+  const [showDeposit, setShowDeposit] = useState(false);
+  const [showPremium, setShowPremium] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
+  const [depositRequired, setDepositRequired] = useState(0);
   
   const countdownRef = useRef<any>(null);
 
@@ -122,6 +133,19 @@ export default function App() {
   }, [gameStatus, countdown]);
 
   const startGame = (amount: number, asset?: TradingAsset) => {
+    // Check if bet amount exceeds limits
+    const maxBet = isPremium ? PREMIUM_BET_LIMIT : FREE_BET_LIMIT;
+    if (amount > maxBet) {
+      if (!isPremium) {
+        setMessage(`Maximum bet for free accounts is $${FREE_BET_LIMIT}. Upgrade to PRO for higher limits.`);
+        setTimeout(() => setShowPremium(true), 1500);
+      } else {
+        setMessage(`Maximum bet is $${maxBet}`);
+      }
+      setTimeout(() => setMessage(''), 3000);
+      return;
+    }
+
     if (asset) setSelectedAsset(asset);
     setBetAmount(amount);
     setGameStatus('setup');
@@ -130,14 +154,17 @@ export default function App() {
   };
 
   const placeBet = (direction: TradeDirection) => {
-    if (betAmount > balance) {
-      setMessage('Insufficient balance');
-      setTimeout(() => setMessage(''), 3000);
+    const fee = betAmount * ((isPremium ? PREMIUM_SERVICE_FEE : SERVICE_FEE) / 100);
+    const totalCost = betAmount + fee;
+
+    // Check if user has enough balance
+    if (totalCost > balance) {
+      setDepositRequired(totalCost);
+      setShowDeposit(true);
       return;
     }
 
-    const fee = betAmount * (SERVICE_FEE / 100);
-    setBalance(prev => prev - betAmount - fee);
+    setBalance(prev => prev - totalCost);
     setMyDirection(direction);
     setGameStatus('resolved');
     setCountdown(timerDuration);
@@ -193,6 +220,20 @@ export default function App() {
     setShowChallenge(true);
   };
 
+  const handleDeposit = (amount: number, method: string) => {
+    setBalance(prev => prev + amount);
+    setMessage(`Successfully deposited $${amount.toFixed(2)} via ${method}`);
+    setTimeout(() => setMessage(''), 3000);
+  };
+
+  const handleUpgrade = () => {
+    setIsPremium(true);
+    setBalance(prev => prev + 50); // Welcome bonus
+    setShowPremium(false);
+    setMessage('Welcome to PRO! You received a $50 bonus.');
+    setTimeout(() => setMessage(''), 3000);
+  };
+
   const resetGame = () => {
     setGameStatus('waiting');
     setResult(null);
@@ -221,10 +262,13 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
+            <button
+              onClick={() => setShowWallet(true)}
+              className="text-right hidden sm:block hover:bg-gray-800 rounded p-2 transition-all"
+            >
               <div className="text-xs text-gray-500">Balance</div>
               <div className="text-sm font-bold text-green-400">${balance.toFixed(2)}</div>
-            </div>
+            </button>
             
             <div className="flex items-center gap-2">
               <div className="text-center">
@@ -377,6 +421,53 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+                
+                {/* Premium-only bet options */}
+                {isPremium && (
+                  <>
+                    <div className="text-xs text-amber-400 font-bold mb-2">⭐ PRO Bet Options</div>
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      {[50, 100, 250].map(amount => (
+                        <button
+                          key={amount}
+                          onClick={() => startGame(amount)}
+                          className={`py-3 rounded font-bold border-2 border-amber-600/50 ${
+                            betAmount === amount
+                              ? 'bg-gradient-to-r from-amber-600 to-yellow-600 text-white'
+                              : 'bg-amber-900/20 text-amber-400 hover:bg-amber-900/40'
+                          }`}
+                        >
+                          ${amount}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      {[500, 1000].map(amount => (
+                        <button
+                          key={amount}
+                          onClick={() => startGame(amount)}
+                          className={`py-3 rounded font-bold border-2 border-amber-600/50 ${
+                            betAmount === amount
+                              ? 'bg-gradient-to-r from-amber-600 to-yellow-600 text-white'
+                              : 'bg-amber-900/20 text-amber-400 hover:bg-amber-900/40'
+                          }`}
+                        >
+                          ${amount}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                
+                {/* Upgrade prompt for free users */}
+                {!isPremium && (
+                  <button
+                    onClick={() => setShowPremium(true)}
+                    className="w-full py-2 mb-3 bg-gradient-to-r from-amber-900/40 to-yellow-900/40 hover:from-amber-900/60 hover:to-yellow-900/60 border border-amber-700/50 text-amber-400 text-sm font-bold rounded transition-all"
+                  >
+                    ⭐ Unlock Higher Bets (Up to $1,000)
+                  </button>
+                )}
                 <button
                   onClick={() => startGame(betAmount || 10)}
                   className="w-full py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-bold rounded"
@@ -413,7 +504,7 @@ export default function App() {
                 </div>
                 <div className="mt-3 text-xs text-gray-400 text-center">
                   Bet: <span className="text-white font-bold">${betAmount}</span> | 
-                  Fee: <span className="text-amber-400">${(betAmount * SERVICE_FEE / 100).toFixed(2)}</span> | 
+                  Fee: <span className="text-amber-400">{isPremium ? PREMIUM_SERVICE_FEE : SERVICE_FEE}% (${(betAmount * (isPremium ? PREMIUM_SERVICE_FEE : SERVICE_FEE) / 100).toFixed(2)})</span> | 
                   Pot: <span className="text-green-400 font-bold">${(betAmount * 2).toFixed(2)}</span>
                 </div>
               </div>
@@ -495,7 +586,10 @@ export default function App() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Service Fee:</span>
-                  <span className="text-amber-400 font-bold">{SERVICE_FEE}%</span>
+                  <span className="text-amber-400 font-bold">
+                    {isPremium ? PREMIUM_SERVICE_FEE : SERVICE_FEE}%
+                    {isPremium && <span className="text-xs text-green-400 ml-1">(PRO)</span>}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">Mode:</span>
@@ -551,6 +645,53 @@ export default function App() {
           onStartGame={startGame}
         />
       )}
+
+      {/* Wallet Modal */}
+      {showWallet && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="max-w-md w-full">
+            <div className="flex justify-end mb-2">
+              <button
+                onClick={() => setShowWallet(false)}
+                className="text-gray-400 hover:text-white text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <Wallet
+              balance={balance}
+              isPremium={isPremium}
+              onDeposit={() => {
+                setShowWallet(false);
+                setShowDeposit(true);
+              }}
+              onWithdraw={() => {
+                setMessage('Withdrawal feature coming soon!');
+                setTimeout(() => setMessage(''), 3000);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Deposit Modal */}
+      <DepositModal
+        isOpen={showDeposit}
+        onClose={() => {
+          setShowDeposit(false);
+          setDepositRequired(0);
+        }}
+        currentBalance={balance}
+        requiredAmount={depositRequired > 0 ? depositRequired : undefined}
+        onDeposit={handleDeposit}
+      />
+
+      {/* Premium Modal */}
+      <PremiumModal
+        isOpen={showPremium}
+        onClose={() => setShowPremium(false)}
+        onUpgrade={handleUpgrade}
+      />
     </div>
   );
 }
