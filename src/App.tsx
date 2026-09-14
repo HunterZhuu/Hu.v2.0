@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import PriceChart from './components/PriceChart';
+import TradingViewChart from './components/TradingViewChart';
 import AssetSelector from './components/AssetSelector';
 import { CandleData, GameResult, TradeDirection, TradingAsset, TRADING_ASSETS } from './types';
 
@@ -421,14 +421,8 @@ export default function App() {
 
             {/* Chart */}
             <div className="bg-[#0f1419] border border-gray-800 rounded-lg p-4">
-              <div className="h-[400px]">
-                <PriceChart
-                  candles={candles}
-                  currentPrice={currentPrice}
-                  hostPrediction={null}
-                  challengerPrediction={null}
-                  targetClosePrice={result?.targetClosePrice || null}
-                />
+              <div className="h-[500px]">
+                <TradingViewChart asset={selectedAsset} height={500} />
               </div>
             </div>
           </div>
