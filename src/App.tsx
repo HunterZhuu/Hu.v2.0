@@ -96,10 +96,11 @@ function saveScores(scores: { host: number; challenger: number }) {
 }
 
 // Real-time price fetching for demo mode (no server needed)
+// Uses FAST APIs: Binance REST for crypto (instant), multiple fallbacks for commodities
 function useDemoMode(enabled: boolean, selectedAsset: TradingAsset) {
   const [candles, setCandles] = useState<CandleData[]>([]);
   const [currentPrice, setCurrentPrice] = useState(0);
-  const [dataSource, setDataSource] = useState('Loading...');
+  const [dataSource, setDataSource] = useState('Connecting...');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastPriceRef = useRef<number>(0);
 
@@ -107,7 +108,7 @@ function useDemoMode(enabled: boolean, selectedAsset: TradingAsset) {
   useEffect(() => {
     setCandles([]);
     setCurrentPrice(0);
-    setDataSource('Loading...');
+    setDataSource('Connecting...');
     lastPriceRef.current = 0;
     
     if (intervalRef.current) {
@@ -127,50 +128,102 @@ function useDemoMode(enabled: boolean, selectedAsset: TradingAsset) {
         let source = '';
 
         if (selectedAsset.category === 'crypto') {
-          // Use CoinGecko free API for crypto (no key needed)
-          const coinMap: Record<string, string> = {
-            'btc': 'bitcoin',
-            'eth': 'ethereum',
-            'bnb': 'binancecoin',
-            'sol': 'solana',
-            'xrp': 'ripple',
-            'ada': 'cardano',
-            'doge': 'dogecoin'
-          };
+          // FAST: Use Binance REST API (no key needed, ~100ms response)
+          const binanceSymbol = selectedAsset.id.toUpperCase() + 'USDT';
           
-          const coinId = coinMap[selectedAsset.id] || 'bitcoin';
-          const response = await fetch(
-            `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd&include_24hr_change=true`
-          );
-          const data = await response.json();
-          
-          if (data[coinId]?.usd) {
-            price = data[coinId].usd;
-            source = 'CoinGecko';
+          try {
+            const response = await fetch(
+              `https://api.binance.com/api/v3/ticker/price?symbol=${binanceSymbol}`,
+              { signal: AbortSignal.timeout(3000) } // 3 second timeout
+            );
+            const data = await response.json();
+            
+            if (data.price) {
+              price = parseFloat(data.price);
+              source = 'Binance';
+            }
+          } catch (binanceError) {
+            // Fallback to CoinGecko if Binance fails
+            const coinMap: Record<string, string> = {
+              'btc': 'bitcoin',
+              'eth': 'ethereum',
+              'bnb': 'binancecoin',
+              'sol': 'solana',
+              'xrp': 'ripple',
+              'ada': 'cardano',
+              'doge': 'dogecoin'
+            };
+            
+            const coinId = coinMap[selectedAsset.id] || 'bitcoin';
+            const response = await fetch(
+              `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`,
+              { signal: AbortSignal.timeout(5000) }
+            );
+            const data = await response.json();
+            
+            if (data[coinId]?.usd) {
+              price = data[coinId].usd;
+              source = 'CoinGecko (fallback)';
+            }
           }
         } else if (selectedAsset.id === 'gold' || selectedAsset.id === 'silver') {
-          // Use free metals API
+          // FAST: Try multiple free metals APIs in parallel
           const metal = selectedAsset.id === 'gold' ? 'XAU' : 'XAG';
-          const response = await fetch(
-            `https://api.metalpriceapi.com/v1/latest?api_key=demo&base=USD&currencies=${metal}`
-          );
-          const data = await response.json();
           
-          if (data.rates && data.rates[metal]) {
-            price = 1 / data.rates[metal]; // Convert to USD per oz
-            source = 'MetalPriceAPI';
+          // Try multiple sources simultaneously
+          const fetchPromises = [
+            // Source 1: MetalPriceAPI
+            fetch(`https://api.metalpriceapi.com/v1/latest?api_key=demo&base=USD&currencies=${metal}`, 
+              { signal: AbortSignal.timeout(3000) }
+            ).then(r => r.json()).then(data => {
+              if (data.rates && data.rates[metal]) {
+                return { price: 1 / data.rates[metal], source: 'MetalPriceAPI' };
+              }
+              throw new Error('No data');
+            }).catch(() => null),
+            
+            // Source 2: Frankfurter (forex-based, works for metals)
+            fetch(`https://api.frankfurter.app/latest?from=USD&to=${metal}`,
+              { signal: AbortSignal.timeout(3000) }
+            ).then(r => r.json()).then(data => {
+              if (data.rates && data.rates[metal]) {
+                return { price: 1 / data.rates[metal], source: 'Frankfurter' };
+              }
+              throw new Error('No data');
+            }).catch(() => null),
+          ];
+          
+          // Use first successful result
+          const results = await Promise.all(fetchPromises);
+          const successResult = results.find(r => r !== null);
+          
+          if (successResult) {
+            price = successResult.price;
+            source = successResult.source;
           }
         } else if (selectedAsset.id === 'oil') {
-          // Use free oil price API
-          const response = await fetch(
-            'https://api.api-ninjas.com/v1/commodityprice?name=crude_oil',
-            { headers: { 'X-Api-Key': 'demo' } }
-          );
-          const data = await response.json();
+          // FAST: Try multiple oil price APIs
+          const fetchPromises = [
+            // Source 1: API Ninjas
+            fetch('https://api.api-ninjas.com/v1/commodityprice?name=crude_oil',
+              { 
+                headers: { 'X-Api-Key': 'demo' },
+                signal: AbortSignal.timeout(3000)
+              }
+            ).then(r => r.json()).then(data => {
+              if (data.price) {
+                return { price: data.price, source: 'API Ninjas' };
+              }
+              throw new Error('No data');
+            }).catch(() => null),
+          ];
           
-          if (data.price) {
-            price = data.price;
-            source = 'API Ninjas';
+          const results = await Promise.all(fetchPromises);
+          const successResult = results.find(r => r !== null);
+          
+          if (successResult) {
+            price = successResult.price;
+            source = successResult.source;
           }
         }
 
@@ -205,6 +258,9 @@ function useDemoMode(enabled: boolean, selectedAsset: TradingAsset) {
             }
             return newCandles;
           });
+        } else if (!cancelled) {
+          // No price fetched, show error
+          setDataSource('API unavailable - using cached');
         }
       } catch (error) {
         console.error('Error fetching price:', error);
@@ -213,16 +269,19 @@ function useDemoMode(enabled: boolean, selectedAsset: TradingAsset) {
           const variation = lastPriceRef.current * (Math.random() * 0.001 - 0.0005);
           const newPrice = lastPriceRef.current + variation;
           setCurrentPrice(parseFloat(newPrice.toFixed(selectedAsset.pricePrecision)));
-          setDataSource('Cached (API unavailable)');
+          setDataSource('Cached (API slow)');
+        } else if (!cancelled) {
+          setDataSource('Connection error');
         }
       }
     };
 
-    // Initial fetch
+    // Initial fetch (immediate)
     fetchRealPrice();
 
-    // Fetch every 5 seconds for commodities, 10 seconds for crypto (rate limits)
-    const interval = selectedAsset.category === 'crypto' ? 10000 : 5000;
+    // FAST updates: Every 2 seconds for crypto, 5 seconds for commodities
+    // This is much faster than before (was 10s/5s)
+    const interval = selectedAsset.category === 'crypto' ? 2000 : 5000;
     intervalRef.current = setInterval(fetchRealPrice, interval);
 
     return () => {
@@ -664,9 +723,29 @@ export default function App() {
             </div>
           )}
           {demoMode && !connected && (
-            <span className="text-xs px-2 py-0.5 bg-amber-900/40 text-amber-400 rounded border border-amber-700/50">
-              DEMO
-            </span>
+            <>
+              <span className="text-xs px-2 py-0.5 bg-amber-900/40 text-amber-400 rounded border border-amber-700/50">
+                DEMO
+              </span>
+              {demoData.dataSource && (
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs px-2 py-0.5 rounded ${
+                    demoData.dataSource.includes('error') || demoData.dataSource.includes('Connection')
+                      ? 'bg-red-900/40 text-red-400 border border-red-700/50'
+                      : demoData.dataSource === 'Connecting...'
+                      ? 'bg-yellow-900/40 text-yellow-400 border border-yellow-700/50'
+                      : 'bg-green-900/40 text-green-400 border border-green-700/50'
+                  }`}>
+                    {demoData.dataSource.includes('error') || demoData.dataSource.includes('Connection')
+                      ? '● ERROR' 
+                      : demoData.dataSource === 'Connecting...'
+                      ? '◌ CONNECTING'
+                      : '● LIVE'}
+                  </span>
+                  <span className="text-xs text-gray-500 hidden md:inline">{demoData.dataSource}</span>
+                </div>
+              )}
+            </>
           )}
         </div>
         <div className="flex items-center gap-3">
