@@ -837,6 +837,37 @@ export default function App() {
           )}
         </div>
         <div className="flex items-center gap-3">
+          {/* Demo/Live Mode Toggle */}
+          <button
+            onClick={() => {
+              if (demoMode) {
+                // Switch to live mode - try to connect to server
+                setDemoMode(false);
+                setMessage('Connecting to live server...');
+                setTimeout(() => setMessage(''), 3000);
+              } else {
+                // Switch to demo mode - disconnect from server
+                if (socket) {
+                  socket.disconnect();
+                }
+                setConnected(false);
+                setDemoMode(true);
+                setMessage('Switched to demo mode');
+                setTimeout(() => setMessage(''), 3000);
+              }
+            }}
+            className={`px-3 py-1.5 text-xs font-bold rounded transition-all flex items-center gap-1 border-2 ${
+              demoMode
+                ? 'bg-amber-900/40 text-amber-400 border-amber-700/50 hover:bg-amber-900/60'
+                : 'bg-green-900/40 text-green-400 border-green-700/50 hover:bg-green-900/60'
+            }`}
+          >
+            <span>{demoMode ? '🎮' : '🌐'}</span>
+            <span className="hidden sm:inline">{demoMode ? 'Demo' : 'Live'}</span>
+            <span className="text-xs opacity-75">→</span>
+            <span>{demoMode ? '🌐' : '🎮'}</span>
+          </button>
+
           <button
             onClick={() => setShowLeaderboard(!showLeaderboard)}
             className="px-3 py-1.5 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-white text-xs font-bold rounded transition-all flex items-center gap-1"
@@ -872,9 +903,17 @@ export default function App() {
             }`}></span>
             <span className="hidden sm:inline">{getStatusText()}</span>
           </div>
-          <div className={`flex items-center gap-2 text-xs px-3 py-1 rounded-full ${connected ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'}`}>
-            <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'}`}></span>
-            {connected ? 'Live' : 'Offline'}
+          <div className={`flex items-center gap-2 text-xs px-3 py-1 rounded-full ${
+            demoMode 
+              ? 'bg-amber-900/30 text-amber-400'
+              : connected 
+                ? 'bg-green-900/30 text-green-400' 
+                : 'bg-red-900/30 text-red-400'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${
+              demoMode ? 'bg-amber-400 animate-pulse' : connected ? 'bg-green-400' : 'bg-red-400'
+            }`}></span>
+            {demoMode ? 'Demo' : connected ? 'Live' : 'Offline'}
           </div>
         </div>
       </header>
@@ -1554,25 +1593,49 @@ export default function App() {
         </div>
       </div>
 
-      {/* Connection Banner */}
-      {!connected && (
-        <div className="fixed bottom-4 left-4 right-4 lg:left-auto lg:right-4 lg:w-96 bg-gray-900/95 border border-gray-700 rounded-lg p-4 backdrop-blur-sm shadow-xl">
-          <div className="flex items-start gap-3">
-            <span className="text-xl">{demoMode ? '🎮' : '⚠️'}</span>
-            <div>
-              <h4 className="text-sm font-bold text-white">
-                {demoMode ? 'Demo Mode Active' : 'Server Not Connected'}
-              </h4>
-              <p className="text-xs text-gray-400 mt-1">
-                {demoMode
-                  ? `Same bet amount! Winner takes all! Timer: ${timerDuration}s`
+      {/* Mode Switch Banner */}
+      <div className="fixed bottom-4 left-4 right-4 lg:left-auto lg:right-4 lg:w-96 bg-gray-900/95 border border-gray-700 rounded-lg p-4 backdrop-blur-sm shadow-xl">
+        <div className="flex items-start gap-3">
+          <span className="text-xl">{demoMode ? '🎮' : connected ? '🌐' : '⚠️'}</span>
+          <div className="flex-1">
+            <h4 className="text-sm font-bold text-white">
+              {demoMode ? 'Demo Mode Active' : connected ? 'Live Mode Active' : 'Server Not Connected'}
+            </h4>
+            <p className="text-xs text-gray-400 mt-1">
+              {demoMode
+                ? 'Playing with real market data. Switch to Live for multiplayer.'
+                : connected
+                  ? 'Connected to server. Playing with other players!'
                   : 'Start the backend server on port 3000 to play multiplayer.'
+              }
+            </p>
+            <button
+              onClick={() => {
+                if (demoMode) {
+                  setDemoMode(false);
+                  setMessage('Connecting to live server...');
+                } else if (connected) {
+                  if (socket) socket.disconnect();
+                  setConnected(false);
+                  setDemoMode(true);
+                  setMessage('Switched to demo mode');
+                } else {
+                  setDemoMode(true);
+                  setMessage('Switched to demo mode');
                 }
-              </p>
-            </div>
+                setTimeout(() => setMessage(''), 3000);
+              }}
+              className={`mt-2 px-3 py-1.5 text-xs font-bold rounded transition-all ${
+                demoMode
+                  ? 'bg-green-600 hover:bg-green-500 text-white'
+                  : 'bg-amber-600 hover:bg-amber-500 text-white'
+              }`}
+            >
+              {demoMode ? '🌐 Switch to Live' : '🎮 Switch to Demo'}
+            </button>
           </div>
         </div>
-      )}
+      </div>
 
       {/* Payment Modal */}
       <PaymentModal
