@@ -27,16 +27,20 @@ let gameState = {
         host: { 
             id: null, 
             name: 'Host', 
-            prediction: null, 
+            prediction: null, // 'buy' or 'sell'
             bet: 0,
-            balance: INITIAL_BALANCE 
+            balance: INITIAL_BALANCE,
+            wins: 0,
+            losses: 0
         },
         challenger: { 
             id: null, 
             name: 'Challenger', 
-            prediction: null, 
+            prediction: null, // 'buy' or 'sell'
             bet: 0,
-            balance: INITIAL_BALANCE 
+            balance: INITIAL_BALANCE,
+            wins: 0,
+            losses: 0
         }
     }
 };
@@ -78,32 +82,51 @@ function determineWinner() {
 
     if (!host.prediction || !challenger.prediction) return;
 
-    const hostDiff = Math.abs(host.prediction - gameState.targetClosePrice);
-    const challengerDiff = Math.abs(challenger.prediction - gameState.targetClosePrice);
+    // Determine if price went up or down
+    const priceWentUp = gameState.targetClosePrice > gameState.currentOpenPrice;
+    
+    // Check if predictions were correct
+    const hostCorrect = (host.prediction === 'buy' && priceWentUp) || (host.prediction === 'sell' && !priceWentUp);
+    const challengerCorrect = (challenger.prediction === 'buy' && priceWentUp) || (challenger.prediction === 'sell' && !priceWentUp);
 
     let winner = 'Draw';
     let winnerPayout = 0;
     
-    if (hostDiff < challengerDiff) {
+    if (hostCorrect && !challengerCorrect) {
+        // Host wins
         winner = 'host';
-        // Winner gets the pot minus service charges already collected
         winnerPayout = gameState.pot;
         gameState.players.host.balance += winnerPayout;
-    } else if (challengerDiff < hostDiff) {
+        gameState.players.host.wins++;
+        gameState.players.challenger.losses++;
+    } else if (!hostCorrect && challengerCorrect) {
+        // Challenger wins
         winner = 'challenger';
         winnerPayout = gameState.pot;
         gameState.players.challenger.balance += winnerPayout;
-    } else {
-        // Draw - split the pot
+        gameState.players.challenger.wins++;
+        gameState.players.host.losses++;
+    } else if (hostCorrect && challengerCorrect) {
+        // Both correct - split the pot
         const splitAmount = gameState.pot / 2;
         gameState.players.host.balance += splitAmount;
         gameState.players.challenger.balance += splitAmount;
+        gameState.players.host.wins++;
+        gameState.players.challenger.wins++;
+    } else {
+        // Both wrong - house keeps the pot
+        winner = 'House';
+        gameState.players.host.losses++;
+        gameState.players.challenger.losses++;
     }
 
     io.emit('game_resolved', {
         targetClosePrice: gameState.targetClosePrice,
-        hostDiff: hostDiff.toFixed(2),
-        challengerDiff: challengerDiff.toFixed(2),
+        openPrice: gameState.currentOpenPrice,
+        hostPrediction: host.prediction,
+        challengerPrediction: challenger.prediction,
+        hostCorrect: hostCorrect,
+        challengerCorrect: challengerCorrect,
         winner: winner,
         winnerPayout: winnerPayout.toFixed(2),
         pot: gameState.pot.toFixed(2),
@@ -200,16 +223,17 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Handle prediction lock
-    socket.on('submit_prediction', (price) => {
+    // Handle prediction (buy/sell)
+    socket.on('submit_prediction', (direction) => {
         if (gameState.status !== 'predicting') return;
+        if (direction !== 'buy' && direction !== 'sell') return;
 
         if (socket.id === gameState.players.host.id) {
-            gameState.players.host.prediction = parseFloat(price);
-            io.emit('player_locked', 'host');
+            gameState.players.host.prediction = direction;
+            io.emit('player_locked', { player: 'host', prediction: direction });
         } else if (socket.id === gameState.players.challenger.id) {
-            gameState.players.challenger.prediction = parseFloat(price);
-            io.emit('player_locked', 'challenger');
+            gameState.players.challenger.prediction = direction;
+            io.emit('player_locked', { player: 'challenger', prediction: direction });
         }
 
         // If both locked, wait for candle close
@@ -241,15 +265,47 @@ io.on('connection', (socket) => {
         console.log(`💰 Deposit: $${depositAmount} via ${method} from ${socket.id}`);
     });
 
+    // Get leaderboard
+    socket.on('get_leaderboard', () => {
+        const leaderboard = [
+            {
+                id: 'host',
+                name: gameState.players.host.name,
+                wins: gameState.players.host.wins,
+                losses: gameState.players.host.losses,
+                winRate: gameState.players.host.wins + gameState.players.host.losses > 0 
+                    ? (gameState.players.host.wins / (gameState.players.host.wins + gameState.players.host.losses)) * 100 
+                    : 0,
+                totalEarnings: 0,
+                streak: 0
+            },
+            {
+                id: 'challenger',
+                name: gameState.players.challenger.name,
+                wins: gameState.players.challenger.wins,
+                losses: gameState.players.challenger.losses,
+                winRate: gameState.players.challenger.wins + gameState.players.challenger.losses > 0 
+                    ? (gameState.players.challenger.wins / (gameState.players.challenger.wins + gameState.players.challenger.losses)) * 100 
+                    : 0,
+                totalEarnings: 0,
+                streak: 0
+            }
+        ].filter(p => p.wins + p.losses > 0);
+        
+        socket.emit('leaderboard', leaderboard);
+    });
+
     socket.on('disconnect', () => {
         // Reset on disconnect
         if (socket.id === gameState.players.host.id) {
             gameState.players.host.id = null;
             gameState.players.host.balance = INITIAL_BALANCE;
+            gameState.players.host.prediction = null;
         }
         if (socket.id === gameState.players.challenger.id) {
             gameState.players.challenger.id = null;
             gameState.players.challenger.balance = INITIAL_BALANCE;
+            gameState.players.challenger.prediction = null;
         }
         
         gameState.status = 'waiting';

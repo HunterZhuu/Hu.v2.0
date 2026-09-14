@@ -1,13 +1,35 @@
 # ⚔️ PipDuel - BTC Price Prediction Game
 
-A real-time multiplayer prediction game where two players bet on the closing price of a BTC/USDT 1-minute candle. The player whose prediction is closest to the actual closing price wins the pot!
+A real-time multiplayer prediction game where two players bet on whether BTC/USDT price will go **UP** or **DOWN** in the next 1-minute candle. Predict correctly and win the pot!
 
 ## 🎮 Game Flow
 
 1. **Waiting Phase** - Two players join (Host & Challenger)
 2. **Betting Phase** - Both players place bets (max $10 each)
-3. **Prediction Phase** - Both players predict the candle close price
+3. **Prediction Phase** - Both players choose BUY (UP) or SELL (DOWN)
 4. **Resolution** - Candle closes, winner determined, pot awarded
+5. **Leaderboard** - Track your wins, losses, and ranking
+
+## 🆕 New Features
+
+### 📈 Buy/Sell Predictions
+- Simple binary choice: Will price go UP or DOWN?
+- Large, intuitive buttons with visual feedback
+- Clear results showing who predicted correctly
+- Fair gameplay based on market intuition
+
+### 🏆 Leaderboard System
+- Track your wins, losses, and win rate
+- See your ranking among top players
+- Win streak indicators (🔥)
+- Persistent stats across sessions (demo mode)
+- Real-time updates after each game
+
+### ⏱️ Countdown Timer
+- Live countdown to candle close
+- Color-coded urgency (green → yellow → red)
+- Large overlay display during prediction phase
+- Builds excitement and tension
 
 ## 💰 Betting System
 
@@ -16,12 +38,21 @@ A real-time multiplayer prediction game where two players bet on the closing pri
 - **Starting Balance**: $100 per player
 - **Winner Gets**: The entire pot (both bets combined)
 
+### Winning Conditions
+
+| Your Prediction | Opponent Prediction | Price Movement | Result |
+|----------------|---------------------|----------------|--------|
+| BUY (UP) | SELL (DOWN) | Price went UP | **You win pot** |
+| BUY (UP) | SELL (DOWN) | Price went DOWN | **Opponent wins** |
+| BUY (UP) | BUY (UP) | Price went UP | **Draw - split pot** |
+| BUY (UP) | BUY (UP) | Price went DOWN | **House wins** |
+
 ### Example Round:
-- Host bets $5 → pays $5 + $0.25 fee = $5.25
-- Challenger bets $8 → pays $8 + $0.40 fee = $8.40
+- Host bets $5 (BUY) → pays $5 + $0.25 fee = $5.25
+- Challenger bets $8 (SELL) → pays $8 + $0.40 fee = $8.40
 - **Total Pot**: $13.00
 - **Service Fee Collected**: $0.65
-- Winner receives $13.00
+- Price goes UP → Host wins $13.00
 
 ## 🚀 Setup
 
@@ -52,20 +83,27 @@ npm run build
 
 ## 🎯 Features
 
-- ✅ Live BTC/USDT price data from Binance WebSocket
-- ✅ Real-time candlestick chart
-- ✅ Betting system with max $10 limit
-- ✅ 5% service charge on each transaction
-- ✅ Balance tracking per player
-- ✅ Pot display with service fee breakdown
-- ✅ Demo mode (works without backend)
-- ✅ Responsive design
+- ✅ **Buy/Sell Predictions** - Simple UP or DOWN choice
+- ✅ **Live BTC/USDT price data** from Binance WebSocket
+- ✅ **Real-time candlestick chart** with price movement
+- ✅ **Betting system** with max $10 limit
+- ✅ **5% service charge** on each transaction
+- ✅ **Balance tracking** per player
+- ✅ **Pot display** with service fee breakdown
+- ✅ **Countdown timer** with visual urgency indicators
+- ✅ **Leaderboard system** with win/loss tracking
+- ✅ **Win streaks** and performance statistics
+- ✅ **Demo mode** (works without backend)
+- ✅ **Payment integration** (PayPal, Apple Pay, Google Pay, Omannet)
+- ✅ **Responsive design** for desktop and mobile
 
 ## 📡 Socket Events
 
 ### Client → Server
 - `place_bet` - Submit bet amount
-- `submit_prediction` - Submit price prediction
+- `submit_prediction` - Submit prediction ('buy' or 'sell')
+- `deposit` - Add funds to balance
+- `get_leaderboard` - Request leaderboard data
 
 ### Server → Client
 - `role_assigned` - Player role (host/challenger)
@@ -75,10 +113,11 @@ npm run build
 - `game_started` - Betting phase begins
 - `both_bet` - Both bets placed, prediction phase
 - `price_update` - Live candle data
-- `player_locked` - Player locked prediction
+- `player_locked` - Player locked prediction (includes direction)
 - `both_locked` - Both predictions locked
-- `game_resolved` - Round results
+- `game_resolved` - Round results (includes correct/wrong status)
 - `game_reset` - Ready for next round
+- `leaderboard` - Leaderboard data
 
 ## 💳 Payment Methods
 
