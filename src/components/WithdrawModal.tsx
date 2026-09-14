@@ -26,6 +26,8 @@ export default function WithdrawModal({
   
   const paymentMethods = [
     { id: 'paypal', name: 'PayPal', icon: '💳', description: 'Withdraw to PayPal account', placeholder: 'PayPal email address' },
+    { id: 'applepay', name: 'Apple Pay', icon: '', description: 'Withdraw to Apple Pay', placeholder: 'Apple ID email or phone number' },
+    { id: 'googlepay', name: 'Google Pay', icon: '🅖', description: 'Withdraw to Google Pay', placeholder: 'Google account email or phone number' },
     { id: 'bank', name: 'Bank Transfer', icon: '🏦', description: 'Withdraw to bank account', placeholder: 'Bank account number' },
     { id: 'crypto', name: 'Cryptocurrency', icon: '₿', description: 'Withdraw to crypto wallet', placeholder: 'Wallet address (BTC/ETH/USDT)' },
   ];
