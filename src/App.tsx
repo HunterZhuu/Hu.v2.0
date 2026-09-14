@@ -121,6 +121,41 @@ function useDemoMode(enabled: boolean, selectedAsset: TradingAsset) {
     if (!enabled) return;
 
     let cancelled = false;
+    let historicalDataLoaded = false;
+
+    // Generate historical candles for chart display
+    const generateHistoricalCandles = async (basePrice: number) => {
+      const historicalCandles: CandleData[] = [];
+      const now = Math.floor(Date.now() / 1000);
+      const currentMinute = now - (now % 60);
+      
+      // Generate 30 historical candles (30 minutes of data)
+      let price = basePrice;
+      for (let i = 30; i > 0; i--) {
+        const candleTime = currentMinute - (i * 60);
+        const volatility = basePrice * 0.002; // 0.2% volatility
+        const change = (Math.random() - 0.5) * volatility;
+        const open = price;
+        const close = price + change;
+        const high = Math.max(open, close) + (Math.random() * volatility * 0.5);
+        const low = Math.min(open, close) - (Math.random() * volatility * 0.5);
+        
+        historicalCandles.push({
+          time: candleTime,
+          open: parseFloat(open.toFixed(selectedAsset.pricePrecision)),
+          high: parseFloat(high.toFixed(selectedAsset.pricePrecision)),
+          low: parseFloat(low.toFixed(selectedAsset.pricePrecision)),
+          close: parseFloat(close.toFixed(selectedAsset.pricePrecision)),
+        });
+        
+        price = close;
+      }
+      
+      if (!cancelled) {
+        setCandles(historicalCandles);
+        historicalDataLoaded = true;
+      }
+    };
 
     const fetchRealPrice = async () => {
       try {
@@ -228,6 +263,11 @@ function useDemoMode(enabled: boolean, selectedAsset: TradingAsset) {
         }
 
         if (price > 0 && !cancelled) {
+          // Generate historical data on first load
+          if (!historicalDataLoaded) {
+            await generateHistoricalCandles(price);
+          }
+          
           lastPriceRef.current = price;
           setCurrentPrice(price);
           setDataSource(source);
@@ -240,6 +280,7 @@ function useDemoMode(enabled: boolean, selectedAsset: TradingAsset) {
             const lastCandle = newCandles[newCandles.length - 1];
 
             if (lastCandle && lastCandle.time === candleTime) {
+              // Update current candle
               newCandles[newCandles.length - 1] = {
                 ...lastCandle,
                 close: parseFloat(price.toFixed(selectedAsset.pricePrecision)),
@@ -247,6 +288,7 @@ function useDemoMode(enabled: boolean, selectedAsset: TradingAsset) {
                 low: parseFloat(Math.min(lastCandle.low, price).toFixed(selectedAsset.pricePrecision)),
               };
             } else {
+              // Create new candle
               newCandles.push({
                 time: candleTime,
                 open: parseFloat(price.toFixed(selectedAsset.pricePrecision)),
