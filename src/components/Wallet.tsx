@@ -1,64 +1,16 @@
 import { useState } from 'react';
+import TransactionHistory, { Transaction } from './TransactionHistory';
 
 interface WalletProps {
   balance: number;
   isPremium: boolean;
   onDeposit: () => void;
   onWithdrawRequest: () => void;
+  transactions: Transaction[];
 }
 
-interface Transaction {
-  id: string;
-  type: 'deposit' | 'withdrawal' | 'bet' | 'win' | 'loss';
-  amount: number;
-  description: string;
-  timestamp: Date;
-}
-
-// Mock transaction history
-const MOCK_TRANSACTIONS: Transaction[] = [
-  { id: '1', type: 'win', amount: 20, description: 'Won bet on BTC/USDT', timestamp: new Date(Date.now() - 3600000) },
-  { id: '2', type: 'bet', amount: -10, description: 'Bet on ETH/USDT', timestamp: new Date(Date.now() - 7200000) },
-  { id: '3', type: 'deposit', amount: 100, description: 'Deposit via PayPal', timestamp: new Date(Date.now() - 86400000) },
-  { id: '4', type: 'loss', amount: -15, description: 'Lost bet on Gold', timestamp: new Date(Date.now() - 172800000) },
-  { id: '5', type: 'win', amount: 30, description: 'Won bet on Silver', timestamp: new Date(Date.now() - 259200000) },
-];
-
-export default function Wallet({ balance, isPremium, onDeposit, onWithdrawRequest }: WalletProps) {
+export default function Wallet({ balance, isPremium, onDeposit, onWithdrawRequest, transactions }: WalletProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'history'>('overview');
-
-  const getTransactionIcon = (type: string) => {
-    switch (type) {
-      case 'deposit': return '💰';
-      case 'withdrawal': return '💸';
-      case 'bet': return '🎲';
-      case 'win': return '🏆';
-      case 'loss': return '❌';
-      default: return '💵';
-    }
-  };
-
-  const getTransactionColor = (type: string) => {
-    switch (type) {
-      case 'deposit':
-      case 'win': return 'text-green-400';
-      case 'withdrawal':
-      case 'bet':
-      case 'loss': return 'text-red-400';
-      default: return 'text-gray-400';
-    }
-  };
-
-  const formatTime = (date: Date) => {
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const hours = Math.floor(diff / 3600000);
-    const days = Math.floor(hours / 24);
-    
-    if (days > 0) return `${days}d ago`;
-    if (hours > 0) return `${hours}h ago`;
-    return 'Just now';
-  };
 
   return (
     <div className="bg-[#0f1419] border border-gray-800 rounded-lg overflow-hidden">
@@ -173,25 +125,7 @@ export default function Wallet({ balance, isPremium, onDeposit, onWithdrawReques
             </div>
           </div>
         ) : (
-          <div className="space-y-2">
-            {MOCK_TRANSACTIONS.map((transaction) => (
-              <div
-                key={transaction.id}
-                className="flex items-center justify-between bg-gray-800/30 rounded p-3"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl">{getTransactionIcon(transaction.type)}</span>
-                  <div>
-                    <div className="text-sm font-bold text-white">{transaction.description}</div>
-                    <div className="text-xs text-gray-500">{formatTime(transaction.timestamp)}</div>
-                  </div>
-                </div>
-                <div className={`text-sm font-bold ${getTransactionColor(transaction.type)}`}>
-                  {transaction.amount > 0 ? '+' : ''}{transaction.amount.toFixed(2)}
-                </div>
-              </div>
-            ))}
-          </div>
+          <TransactionHistory transactions={transactions} />
         )}
       </div>
     </div>

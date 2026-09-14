@@ -9,6 +9,7 @@ import Wallet from './components/Wallet';
 import DepositModal from './components/DepositModal';
 import WithdrawModal from './components/WithdrawModal';
 import PremiumModal from './components/PremiumModal';
+import TransactionHistory, { Transaction } from './components/TransactionHistory';
 import { CandleData, GameResult, TradeDirection, TradingAsset, TRADING_ASSETS } from './types';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
@@ -57,6 +58,7 @@ export default function App() {
   const [balance, setBalance] = useState(INITIAL_BALANCE);
   const [scores, setScores] = useState({ host: 0, challenger: 0 });
   const [message, setMessage] = useState('');
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   
   // UI state
   const [showChallenge, setShowChallenge] = useState(false);
@@ -171,6 +173,30 @@ export default function App() {
     setGameStatus('resolved');
     setCountdown(timerDuration);
 
+    // Add bet transaction
+    const betTransaction: Transaction = {
+      id: `bet_${Date.now()}`,
+      type: 'bet',
+      amount: betAmount,
+      status: 'completed',
+      description: `Bet on ${selectedAsset.symbol} (${direction.toUpperCase()})`,
+      timestamp: new Date(),
+      fee: fee,
+      asset: selectedAsset.symbol,
+    };
+    setTransactions(prev => [betTransaction, ...prev]);
+
+    // Add fee transaction
+    const feeTransaction: Transaction = {
+      id: `fee_${Date.now()}_bet`,
+      type: 'fee',
+      amount: fee,
+      status: 'completed',
+      description: `Service fee (${isPremium ? PREMIUM_SERVICE_FEE : SERVICE_FEE}%)`,
+      timestamp: new Date(),
+    };
+    setTransactions(prev => [feeTransaction, ...prev]);
+
     if (demoMode) {
       // Simulate opponent
       setTimeout(() => {
@@ -191,12 +217,50 @@ export default function App() {
           winner = 'host';
           payout = pot.toFixed(2);
           setBalance(prev => prev + pot);
+          
+          // Add win transaction
+          const winTransaction: Transaction = {
+            id: `win_${Date.now()}`,
+            type: 'win',
+            amount: pot,
+            status: 'completed',
+            description: `Won bet on ${selectedAsset.symbol}`,
+            timestamp: new Date(),
+            asset: selectedAsset.symbol,
+          };
+          setTransactions(prev => [winTransaction, ...prev]);
+          
         } else if (!iCorrect && oppCorrect) {
           winner = 'challenger';
           payout = pot.toFixed(2);
+          
+          // Add loss transaction
+          const lossTransaction: Transaction = {
+            id: `loss_${Date.now()}`,
+            type: 'loss',
+            amount: -betAmount,
+            status: 'completed',
+            description: `Lost bet on ${selectedAsset.symbol}`,
+            timestamp: new Date(),
+            asset: selectedAsset.symbol,
+          };
+          setTransactions(prev => [lossTransaction, ...prev]);
+          
         } else {
           payout = actualBet.toFixed(2);
           setBalance(prev => prev + actualBet);
+          
+          // Add draw transaction (partial refund)
+          const drawTransaction: Transaction = {
+            id: `draw_${Date.now()}`,
+            type: 'win',
+            amount: actualBet,
+            status: 'completed',
+            description: `Draw on ${selectedAsset.symbol} (partial refund)`,
+            timestamp: new Date(),
+            asset: selectedAsset.symbol,
+          };
+          setTransactions(prev => [drawTransaction, ...prev]);
         }
 
         setResult({
@@ -228,6 +292,19 @@ export default function App() {
 
   const handleDeposit = (amount: number, method: string) => {
     setBalance(prev => prev + amount);
+    
+    // Add deposit transaction
+    const newTransaction: Transaction = {
+      id: `deposit_${Date.now()}`,
+      type: 'deposit',
+      amount: amount,
+      method: method,
+      status: 'completed',
+      description: `Deposit via ${method}`,
+      timestamp: new Date(),
+    };
+    setTransactions(prev => [newTransaction, ...prev]);
+    
     setMessage(`Successfully deposited $${amount.toFixed(2)} via ${method}`);
     setTimeout(() => setMessage(''), 3000);
   };
@@ -243,13 +320,59 @@ export default function App() {
     }
 
     setBalance(prev => prev - totalDeducted);
+    
+    // Add withdrawal transaction
+    const newTransaction: Transaction = {
+      id: `withdrawal_${Date.now()}`,
+      type: 'withdrawal',
+      amount: amount,
+      method: method,
+      status: 'pending',
+      description: `Withdrawal via ${method}`,
+      timestamp: new Date(),
+      details: details,
+      fee: processingFee,
+    };
+    setTransactions(prev => [newTransaction, ...prev]);
+    
+    // Add fee transaction
+    const feeTransaction: Transaction = {
+      id: `fee_${Date.now()}`,
+      type: 'fee',
+      amount: processingFee,
+      method: method,
+      status: 'completed',
+      description: `Processing fee (${method})`,
+      timestamp: new Date(),
+    };
+    setTransactions(prev => [feeTransaction, ...prev]);
+    
     setMessage(`Withdrawal of $${amount.toFixed(2)} initiated via ${method}. Processing time: 1-3 business days.`);
     setTimeout(() => setMessage(''), 5000);
+    
+    // Simulate completion after 3 seconds (in real app, this would be server-side)
+    setTimeout(() => {
+      setTransactions(prev => prev.map(t => 
+        t.id === newTransaction.id ? { ...t, status: 'completed' as const } : t
+      ));
+    }, 3000);
   };
 
   const handleUpgrade = () => {
     setIsPremium(true);
     setBalance(prev => prev + 50); // Welcome bonus
+    
+    // Add bonus transaction
+    const bonusTransaction: Transaction = {
+      id: `bonus_${Date.now()}`,
+      type: 'bonus',
+      amount: 50,
+      status: 'completed',
+      description: 'PRO upgrade welcome bonus',
+      timestamp: new Date(),
+    };
+    setTransactions(prev => [bonusTransaction, ...prev]);
+    
     setShowPremium(false);
     setMessage('Welcome to PRO! You received a $50 bonus.');
     setTimeout(() => setMessage(''), 3000);
@@ -683,6 +806,7 @@ export default function App() {
             <Wallet
               balance={balance}
               isPremium={isPremium}
+              transactions={transactions}
               onDeposit={() => {
                 setShowWallet(false);
                 setShowDeposit(true);
