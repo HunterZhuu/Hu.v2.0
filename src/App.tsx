@@ -127,6 +127,10 @@ export default function App() {
   // Payment modal state
   const [showPaymentModal, setShowPaymentModal] = useState(false);
 
+  // Countdown timer state
+  const [candleCountdown, setCandleCountdown] = useState(60);
+  const candleCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // Demo mode data
   const demoData = useDemoMode(demoMode && !connected);
 
@@ -317,6 +321,76 @@ export default function App() {
     setTimeout(() => setMessage(''), 3000);
   }, [connected, socket]);
 
+  // Countdown timer for candle close
+  useEffect(() => {
+    if (gameStatus === 'predicting' || gameStatus === 'betting') {
+      if (connected) {
+        // Live mode: sync to real candle close time
+        const updateCountdown = () => {
+          const now = Math.floor(Date.now() / 1000);
+          const secondsUntilClose = 60 - (now % 60);
+          setCandleCountdown(secondsUntilClose);
+        };
+
+        updateCountdown();
+        candleCountdownRef.current = setInterval(updateCountdown, 1000);
+
+        return () => {
+          if (candleCountdownRef.current) {
+            clearInterval(candleCountdownRef.current);
+          }
+        };
+      } else if (demoMode) {
+        // Demo mode: countdown from 30 seconds for faster testing
+        setCandleCountdown(30);
+        candleCountdownRef.current = setInterval(() => {
+          setCandleCountdown(prev => {
+            if (prev <= 1) {
+              if (candleCountdownRef.current) clearInterval(candleCountdownRef.current);
+              // Auto-resolve demo game when countdown hits 0
+              if (gameStatus === 'predicting' && hostLocked) {
+                const closePrice = currentPrice + (Math.random() - 0.5) * 20;
+                const predPrice = parseFloat(demoPrediction || prediction);
+                if (!isNaN(predPrice)) {
+                  const diff = Math.abs(predPrice - closePrice).toFixed(2);
+                  const challengerDiff = (parseFloat(diff) + Math.random() * 50).toFixed(2);
+                  const winner = parseFloat(diff) < parseFloat(challengerDiff) ? 'host' : 'challenger';
+                  const winnerPayout = pot.toFixed(2);
+
+                  if (winner === 'host') {
+                    setBalance((prev) => prev + pot);
+                  }
+
+                  setDemoResult({
+                    targetClosePrice: parseFloat(closePrice.toFixed(2)),
+                    hostDiff: diff,
+                    challengerDiff: challengerDiff,
+                    winner,
+                    winnerPayout,
+                    pot: pot.toFixed(2),
+                    serviceChargeCollected: totalServiceCharge.toFixed(2),
+                  } as GameResult & { winnerPayout: string, pot: string, serviceChargeCollected: string });
+                  setGameStatus('resolved');
+                  setCountdown(8);
+                }
+              }
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+
+        return () => {
+          if (candleCountdownRef.current) {
+            clearInterval(candleCountdownRef.current);
+          }
+        };
+      }
+    } else {
+      setCandleCountdown(60);
+    }
+  }, [gameStatus, connected, demoMode, hostLocked, currentPrice, demoPrediction, prediction, pot, totalServiceCharge]);
+
   // Demo mode betting
   const placeDemoBet = useCallback(() => {
     if (!betAmount) return;
@@ -344,32 +418,9 @@ export default function App() {
 
     setGameStatus('predicting');
     setHostLocked(true);
-    setMessage('Prediction locked! Simulating candle close...');
-
-    setTimeout(() => {
-      const closePrice = currentPrice + (Math.random() - 0.5) * 20;
-      const diff = Math.abs(predPrice - closePrice).toFixed(2);
-      const challengerDiff = (parseFloat(diff) + Math.random() * 50).toFixed(2);
-      const winner = parseFloat(diff) < parseFloat(challengerDiff) ? 'host' : 'challenger';
-      const winnerPayout = pot.toFixed(2);
-
-      if (winner === 'host') {
-        setBalance((prev) => prev + pot);
-      }
-
-      setDemoResult({
-        targetClosePrice: parseFloat(closePrice.toFixed(2)),
-        hostDiff: diff,
-        challengerDiff: challengerDiff,
-        winner,
-        winnerPayout,
-        pot: pot.toFixed(2),
-        serviceChargeCollected: totalServiceCharge.toFixed(2),
-      } as GameResult & { winnerPayout: string, pot: string, serviceChargeCollected: string });
-      setGameStatus('resolved');
-      setCountdown(8);
-    }, 3000);
-  }, [demoPrediction, currentPrice, pot, totalServiceCharge]);
+    setMessage('Prediction locked! Watch the countdown...');
+    // Countdown timer will handle the auto-resolution
+  }, [demoPrediction]);
 
   const getStatusColor = () => {
     switch (gameStatus) {
@@ -450,6 +501,31 @@ export default function App() {
                 <div className="text-sm font-bold text-green-400">${pot.toFixed(2)}</div>
               </div>
             )}
+            {/* Countdown Timer */}
+            {(gameStatus === 'predicting' || gameStatus === 'betting') && (
+              <div className="ml-auto">
+                <div className="text-xs text-gray-500 mb-1">
+                  {gameStatus === 'betting' ? 'Betting closes in' : 'Winner in'}
+                </div>
+                <div className={`text-3xl font-bold font-mono ${
+                  candleCountdown <= 10 ? 'text-red-500 animate-pulse' :
+                  candleCountdown <= 30 ? 'text-yellow-500' :
+                  'text-green-500'
+                }`}>
+                  {candleCountdown}s
+                </div>
+                <div className="w-full bg-gray-700 rounded-full h-1.5 mt-1">
+                  <div
+                    className={`h-1.5 rounded-full transition-all duration-1000 ${
+                      candleCountdown <= 10 ? 'bg-red-500' :
+                      candleCountdown <= 30 ? 'bg-yellow-500' :
+                      'bg-green-500'
+                    }`}
+                    style={{ width: `${(candleCountdown / 60) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
             {displayResult && (
               <div className="ml-auto">
                 <div className="text-xs text-gray-500">Close Price</div>
@@ -467,6 +543,37 @@ export default function App() {
               challengerPrediction={null}
               targetClosePrice={displayResult?.targetClosePrice || null}
             />
+            {/* Large Countdown Overlay */}
+            {gameStatus === 'predicting' && hostLocked && challengerLocked && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="bg-black/60 backdrop-blur-sm rounded-2xl p-8 border border-gray-700">
+                  <div className="text-center">
+                    <div className="text-sm text-gray-400 mb-2">🏆 Winner Determined In</div>
+                    <div className={`text-7xl font-bold font-mono ${
+                      candleCountdown <= 10 ? 'text-red-500 animate-pulse scale-110' :
+                      candleCountdown <= 30 ? 'text-yellow-500' :
+                      'text-green-500'
+                    } transition-all duration-300`}>
+                      {candleCountdown}
+                    </div>
+                    <div className="text-sm text-gray-400 mt-2">seconds</div>
+                  </div>
+                </div>
+              </div>
+            )}
+            {/* Betting Phase Countdown */}
+            {gameStatus === 'betting' && (
+              <div className="absolute top-4 right-4 bg-black/70 backdrop-blur-sm rounded-lg px-4 py-2 border border-gray-700">
+                <div className="text-xs text-gray-400">Betting closes in</div>
+                <div className={`text-2xl font-bold font-mono ${
+                  candleCountdown <= 10 ? 'text-red-500 animate-pulse' :
+                  candleCountdown <= 30 ? 'text-yellow-500' :
+                  'text-green-500'
+                }`}>
+                  {candleCountdown}s
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
