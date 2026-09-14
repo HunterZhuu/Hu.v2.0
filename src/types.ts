@@ -181,6 +181,7 @@ export interface GameResult {
   winnerPayout?: string;
   pot?: string;
   serviceChargeCollected?: string;
+  actualBet?: string;
   hostScore: number;
   challengerScore: number;
 }

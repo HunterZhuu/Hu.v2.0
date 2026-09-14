@@ -155,16 +155,16 @@ export default function App() {
 
   const placeBet = (direction: TradeDirection) => {
     const fee = betAmount * ((isPremium ? PREMIUM_SERVICE_FEE : SERVICE_FEE) / 100);
-    const totalCost = betAmount + fee;
+    const actualBet = betAmount - fee; // Service charge deducted from bet amount
 
-    // Check if user has enough balance
-    if (totalCost > balance) {
-      setDepositRequired(totalCost);
+    // Check if user has enough balance (only need the bet amount now)
+    if (betAmount > balance) {
+      setDepositRequired(betAmount);
       setShowDeposit(true);
       return;
     }
 
-    setBalance(prev => prev - totalCost);
+    setBalance(prev => prev - betAmount);
     setMyDirection(direction);
     setGameStatus('resolved');
     setCountdown(timerDuration);
@@ -182,16 +182,19 @@ export default function App() {
         let winner = 'Draw';
         let payout = '0';
 
+        const actualBet = betAmount - (betAmount * (isPremium ? PREMIUM_SERVICE_FEE : SERVICE_FEE) / 100);
+        const pot = actualBet * 2;
+
         if (iCorrect && !oppCorrect) {
           winner = 'host';
-          payout = (betAmount * 2).toFixed(2);
-          setBalance(prev => prev + betAmount * 2);
+          payout = pot.toFixed(2);
+          setBalance(prev => prev + pot);
         } else if (!iCorrect && oppCorrect) {
           winner = 'challenger';
-          payout = (betAmount * 2).toFixed(2);
+          payout = pot.toFixed(2);
         } else {
-          payout = betAmount.toFixed(2);
-          setBalance(prev => prev + betAmount);
+          payout = actualBet.toFixed(2);
+          setBalance(prev => prev + actualBet);
         }
 
         setResult({
@@ -204,8 +207,9 @@ export default function App() {
           challengerCorrect: oppCorrect,
           winner,
           winnerPayout: payout,
-          pot: (betAmount * 2).toFixed(2),
+          pot: pot.toFixed(2),
           serviceChargeCollected: (fee * 2).toFixed(2),
+          actualBet: actualBet.toFixed(2),
           hostScore: scores.host + (winner === 'host' ? 1 : 0),
           challengerScore: scores.challenger + (winner === 'challenger' ? 1 : 0)
         });
@@ -504,8 +508,9 @@ export default function App() {
                 </div>
                 <div className="mt-3 text-xs text-gray-400 text-center">
                   Bet: <span className="text-white font-bold">${betAmount}</span> | 
-                  Fee: <span className="text-amber-400">{isPremium ? PREMIUM_SERVICE_FEE : SERVICE_FEE}% (${(betAmount * (isPremium ? PREMIUM_SERVICE_FEE : SERVICE_FEE) / 100).toFixed(2)})</span> | 
-                  Pot: <span className="text-green-400 font-bold">${(betAmount * 2).toFixed(2)}</span>
+                  Fee: <span className="text-amber-400">{isPremium ? PREMIUM_SERVICE_FEE : SERVICE_FEE}% (${(betAmount * (isPremium ? PREMIUM_SERVICE_FEE : SERVICE_FEE) / 100).toFixed(2)} deducted)</span> | 
+                  Playing: <span className="text-blue-400 font-bold">${(betAmount - (betAmount * (isPremium ? PREMIUM_SERVICE_FEE : SERVICE_FEE) / 100)).toFixed(2)}</span> | 
+                  Pot: <span className="text-green-400 font-bold">${((betAmount - (betAmount * (isPremium ? PREMIUM_SERVICE_FEE : SERVICE_FEE) / 100)) * 2).toFixed(2)}</span>
                 </div>
               </div>
             )}

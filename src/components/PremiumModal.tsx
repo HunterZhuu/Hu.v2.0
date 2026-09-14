@@ -12,8 +12,8 @@ export default function PremiumModal({ isOpen, onClose, onUpgrade }: PremiumModa
   if (!isOpen) return null;
 
   const plans = {
-    monthly: { price: 9.99, period: 'month', savings: 0 },
-    yearly: { price: 99.99, period: 'year', savings: 17 },
+    monthly: { price: 100, period: 'month', savings: 0 },
+    yearly: { price: 1200, period: 'year', savings: 0 },
   };
 
   const benefits = [
@@ -79,19 +79,16 @@ export default function PremiumModal({ isOpen, onClose, onUpgrade }: PremiumModa
               </button>
               <button
                 onClick={() => setSelectedPlan('yearly')}
-                className={`p-4 rounded-lg border-2 transition-all relative ${
+                className={`p-4 rounded-lg border-2 transition-all ${
                   selectedPlan === 'yearly'
                     ? 'border-amber-500 bg-amber-900/20'
                     : 'border-gray-700 bg-gray-800/50 hover:border-gray-600'
                 }`}
               >
-                <div className="absolute -top-2 -right-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white text-xs font-bold px-2 py-0.5 rounded">
-                  SAVE {plans.yearly.savings}%
-                </div>
                 <div className="text-sm text-gray-400 mb-1">Yearly</div>
                 <div className="text-2xl font-bold text-white">${plans.yearly.price}</div>
                 <div className="text-xs text-gray-400">per year</div>
-                <div className="text-xs text-green-400 mt-1">
+                <div className="text-xs text-gray-400 mt-1">
                   ${((plans.yearly.price / 12) ).toFixed(2)}/month
                 </div>
               </button>
