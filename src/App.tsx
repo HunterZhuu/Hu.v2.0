@@ -4,7 +4,8 @@ import PriceChart from './components/PriceChart';
 import PaymentModal from './components/PaymentModal';
 import Leaderboard from './components/Leaderboard';
 import RegistrationModal, { UserData } from './components/RegistrationModal';
-import { CandleData, GameResult, TradeDirection, LeaderboardEntry } from './types';
+import AssetSelector from './components/AssetSelector';
+import { CandleData, GameResult, TradeDirection, LeaderboardEntry, TradingAsset, TRADING_ASSETS } from './types';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
 const MAX_BET = 10;
@@ -12,6 +13,11 @@ const SERVICE_CHARGE_PERCENT = 5;
 const INITIAL_BALANCE = 100;
 const PLAYER_ID = 'player_' + Math.random().toString(36).substring(7);
 const PLAYER_NAME = 'Player_' + PLAYER_ID.substring(7, 11).toUpperCase();
+
+// Get server URL with asset parameter
+const getServerUrl = (assetId: string) => {
+  return `${SERVER_URL}?asset=${assetId}`;
+};
 
 type GameStatus = 'waiting' | 'setup' | 'betting' | 'resolved';
 
@@ -212,6 +218,9 @@ export default function App() {
   const [selectedBetAmount, setSelectedBetAmount] = useState<number | null>(null);
   const [customBetAmount, setCustomBetAmount] = useState('');
 
+  // Asset selection state
+  const [selectedAsset, setSelectedAsset] = useState<TradingAsset>(TRADING_ASSETS[0]); // Default to BTC
+
   // Demo mode data
   const demoData = useDemoMode(demoMode && !connected);
 
@@ -229,7 +238,7 @@ export default function App() {
   }, [demoData.candles, demoData.currentPrice, demoMode, connected]);
 
   useEffect(() => {
-    const newSocket = io(SERVER_URL, { transports: ['websocket', 'polling'], timeout: 5000 });
+    const newSocket = io(getServerUrl(selectedAsset.id), { transports: ['websocket', 'polling'], timeout: 5000 });
 
     newSocket.on('connect', () => {
       setConnected(true);
@@ -346,7 +355,7 @@ export default function App() {
       clearTimeout(demoTimeout);
       newSocket.close();
     };
-  }, [timerDuration, scores]);
+  }, [timerDuration, scores, selectedAsset.id]);
 
   // Countdown timer
   useEffect(() => {
@@ -536,7 +545,11 @@ export default function App() {
           <div className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
             ⚔️ PipDuel
           </div>
-          <span className="text-xs text-gray-500 hidden sm:inline">BTC/USDT • Buy or Sell</span>
+          <span className="text-xs text-gray-500 hidden sm:inline flex items-center gap-1">
+            <span style={{ color: selectedAsset.color }}>{selectedAsset.icon}</span>
+            <span>{selectedAsset.symbol}</span>
+            <span>• Buy or Sell</span>
+          </span>
           {demoMode && !connected && (
             <span className="text-xs px-2 py-0.5 bg-amber-900/40 text-amber-400 rounded border border-amber-700/50">
               DEMO
@@ -593,9 +606,12 @@ export default function App() {
           {/* Price Display with Score Counter */}
           <div className="px-4 py-3 flex items-center gap-6 border-b border-gray-800 bg-[#0f1419]">
             <div>
-              <div className="text-xs text-gray-500">BTC/USDT</div>
-              <div className="text-2xl font-bold text-yellow-400">
-                ${currentPrice > 0 ? currentPrice.toFixed(2) : '---'}
+              <div className="text-xs text-gray-500 flex items-center gap-1">
+                <span style={{ color: selectedAsset.color }}>{selectedAsset.icon}</span>
+                <span>{selectedAsset.symbol}</span>
+              </div>
+              <div className="text-2xl font-bold" style={{ color: selectedAsset.color }}>
+                ${currentPrice > 0 ? currentPrice.toFixed(selectedAsset.pricePrecision) : '---'}
               </div>
             </div>
             {openPrice > 0 && (
@@ -673,6 +689,15 @@ export default function App() {
               )}
             </div>
           </div>
+
+          {/* Timer Selection */}
+          {/* Asset Selection */}
+          {(gameStatus === 'waiting' || gameStatus === 'setup') && (
+            <AssetSelector
+              selectedAsset={selectedAsset}
+              onAssetChange={setSelectedAsset}
+            />
+          )}
 
           {/* Timer Selection */}
           {(gameStatus === 'waiting' || gameStatus === 'setup') && (

@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const WebSocket = require('ws');
 
 const app = express();
 app.use(cors());
@@ -9,6 +10,17 @@ app.use(express.static('public'));
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
+
+// Available trading assets
+const TRADING_ASSETS = {
+  btc: { symbol: 'btcusdt', name: 'Bitcoin', precision: 2 },
+  eth: { symbol: 'ethusdt', name: 'Ethereum', precision: 2 },
+  bnb: { symbol: 'bnbusdt', name: 'Binance Coin', precision: 2 },
+  sol: { symbol: 'solusdt', name: 'Solana', precision: 2 },
+  xrp: { symbol: 'xrpusdt', name: 'Ripple', precision: 4 },
+  ada: { symbol: 'adausdt', name: 'Cardano', precision: 4 },
+  doge: { symbol: 'dogeusdt', name: 'Dogecoin', precision: 5 }
+};
 
 // Configuration
 const MAX_BET = 10; // Maximum bet amount in dollars
@@ -51,31 +63,61 @@ let gameState = {
     }
 };
 
-// Connect to Binance Public WebSocket for live 1-minute BTC candles
-const binanceWs = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@kline_1m');
+// Dynamic WebSocket connections for different assets
+const assetConnections = {};
 
-binanceWs.on('message', (data) => {
-    const message = JSON.parse(data);
-    const kline = message.k;
-    
-    const currentPrice = parseFloat(kline.c);
-    gameState.currentOpenPrice = parseFloat(kline.o);
-
-    // If the candle just closed (x=true), resolve the game
-    if (kline.x && gameState.status === 'resolved') {
-        gameState.targetClosePrice = currentPrice;
-        determineWinner();
+function connectToAsset(assetId) {
+    if (assetConnections[assetId]) {
+        return assetConnections[assetId];
     }
 
-    // Broadcast price update to all clients
-    io.emit('price_update', { 
-        time: kline.t / 1000, 
-        open: parseFloat(kline.o), 
-        high: parseFloat(kline.h), 
-        low: parseFloat(kline.l), 
-        close: currentPrice 
+    const asset = TRADING_ASSETS[assetId] || TRADING_ASSETS.btc;
+    const wsUrl = `wss://stream.binance.com:9443/ws/${asset.symbol}@kline_1m`;
+    
+    const ws = new WebSocket(wsUrl);
+    
+    ws.on('open', () => {
+        console.log(`✅ Connected to ${asset.name} (${asset.symbol}) price feed`);
     });
-});
+
+    ws.on('message', (data) => {
+        const message = JSON.parse(data);
+        const kline = message.k;
+        
+        const currentPrice = parseFloat(kline.c);
+        gameState.currentOpenPrice = parseFloat(kline.o);
+
+        // If the candle just closed (x=true), resolve the game
+        if (kline.x && gameState.status === 'resolved') {
+            gameState.targetClosePrice = currentPrice;
+            determineWinner();
+        }
+
+        // Broadcast price update to all clients
+        io.emit('price_update', { 
+            time: kline.t / 1000, 
+            open: parseFloat(kline.o), 
+            high: parseFloat(kline.h), 
+            low: parseFloat(kline.l), 
+            close: currentPrice 
+        });
+    });
+
+    ws.on('error', (error) => {
+        console.error(`❌ WebSocket error for ${asset.name}:`, error);
+    });
+
+    ws.on('close', () => {
+        console.log(`🔌 Disconnected from ${asset.name} price feed`);
+        delete assetConnections[assetId];
+    });
+
+    assetConnections[assetId] = ws;
+    return ws;
+}
+
+// Default connection to BTC
+connectToAsset('btc');
 
 function calculateServiceCharge(betAmount) {
     return (betAmount * SERVICE_CHARGE_PERCENT) / 100;
@@ -167,6 +209,14 @@ function determineWinner() {
 
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
+
+    // Handle asset selection
+    socket.on('select_asset', (assetId) => {
+        console.log(`User ${socket.id} selected asset: ${assetId}`);
+        // In a multi-asset system, you'd create separate game rooms per asset
+        // For now, we'll just acknowledge the selection
+        socket.emit('asset_selected', { assetId, asset: TRADING_ASSETS[assetId] || TRADING_ASSETS.btc });
+    });
 
     // Assign roles
     if (!gameState.players.host.id) {

@@ -8,6 +8,117 @@ export interface CandleData {
 
 export type TradeDirection = 'buy' | 'sell';
 
+export interface TradingAsset {
+  id: string;
+  symbol: string;
+  name: string;
+  icon: string;
+  color: string;
+  binanceSymbol?: string;
+  category: 'crypto' | 'commodity' | 'forex';
+  pricePrecision: number;
+}
+
+export const TRADING_ASSETS: TradingAsset[] = [
+  {
+    id: 'btc',
+    symbol: 'BTC/USDT',
+    name: 'Bitcoin',
+    icon: '₿',
+    color: '#F7931A',
+    binanceSymbol: 'btcusdt',
+    category: 'crypto',
+    pricePrecision: 2
+  },
+  {
+    id: 'eth',
+    symbol: 'ETH/USDT',
+    name: 'Ethereum',
+    icon: 'Ξ',
+    color: '#627EEA',
+    binanceSymbol: 'ethusdt',
+    category: 'crypto',
+    pricePrecision: 2
+  },
+  {
+    id: 'bnb',
+    symbol: 'BNB/USDT',
+    name: 'Binance Coin',
+    icon: '◆',
+    color: '#F3BA2F',
+    binanceSymbol: 'bnbusdt',
+    category: 'crypto',
+    pricePrecision: 2
+  },
+  {
+    id: 'sol',
+    symbol: 'SOL/USDT',
+    name: 'Solana',
+    icon: '◎',
+    color: '#9945FF',
+    binanceSymbol: 'solusdt',
+    category: 'crypto',
+    pricePrecision: 2
+  },
+  {
+    id: 'xrp',
+    symbol: 'XRP/USDT',
+    name: 'Ripple',
+    icon: '✕',
+    color: '#23292F',
+    binanceSymbol: 'xrpusdt',
+    category: 'crypto',
+    pricePrecision: 4
+  },
+  {
+    id: 'ada',
+    symbol: 'ADA/USDT',
+    name: 'Cardano',
+    icon: '₳',
+    color: '#0033AD',
+    binanceSymbol: 'adausdt',
+    category: 'crypto',
+    pricePrecision: 4
+  },
+  {
+    id: 'doge',
+    symbol: 'DOGE/USDT',
+    name: 'Dogecoin',
+    icon: 'Ð',
+    color: '#C2A633',
+    binanceSymbol: 'dogeusdt',
+    category: 'crypto',
+    pricePrecision: 5
+  },
+  {
+    id: 'gold',
+    symbol: 'XAU/USD',
+    name: 'Gold',
+    icon: '🥇',
+    color: '#FFD700',
+    category: 'commodity',
+    pricePrecision: 2
+  },
+  {
+    id: 'silver',
+    symbol: 'XAG/USD',
+    name: 'Silver',
+    icon: '🥈',
+    color: '#C0C0C0',
+    category: 'commodity',
+    pricePrecision: 3
+  },
+  {
+    id: 'oil',
+    symbol: 'WTI/USD',
+    name: 'Crude Oil',
+    icon: '🛢️',
+    color: '#1A1A1A',
+    category: 'commodity',
+    pricePrecision: 2
+  }
+];
+
 export interface UserData {
   id: string;
   email: string;
