@@ -218,6 +218,29 @@ io.on('connection', (socket) => {
         }
     });
 
+    // Handle deposit
+    socket.on('deposit', ({ amount, method }) => {
+        const depositAmount = parseFloat(amount);
+        if (isNaN(depositAmount) || depositAmount <= 0) {
+            socket.emit('deposit_error', 'Invalid deposit amount');
+            return;
+        }
+
+        // In production, you would verify the payment here
+        // For now, we'll just add the amount to the player's balance
+        if (socket.id === gameState.players.host.id) {
+            gameState.players.host.balance += depositAmount;
+            socket.emit('balance_update', { balance: gameState.players.host.balance });
+            socket.emit('deposit_success', { amount: depositAmount, method });
+        } else if (socket.id === gameState.players.challenger.id) {
+            gameState.players.challenger.balance += depositAmount;
+            socket.emit('balance_update', { balance: gameState.players.challenger.balance });
+            socket.emit('deposit_success', { amount: depositAmount, method });
+        }
+
+        console.log(`💰 Deposit: $${depositAmount} via ${method} from ${socket.id}`);
+    });
+
     socket.on('disconnect', () => {
         // Reset on disconnect
         if (socket.id === gameState.players.host.id) {

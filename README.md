@@ -80,6 +80,46 @@ npm run build
 - `game_resolved` - Round results
 - `game_reset` - Ready for next round
 
+## 💳 Payment Methods
+
+Players can deposit funds using multiple payment methods:
+
+### Supported Payment Methods
+
+1. **PayPal**
+   - Email: `fhs_alhinai@hotmail.com`
+   - Send payment with your player ID in the note
+
+2. **Apple Pay**
+   - Phone: `+96895188386`
+   - Use Apple Pay to send funds
+
+3. **Google Pay**
+   - Phone: `+96895188386`
+   - Use Google Pay to send funds
+
+4. **Omannet Mobile Payment**
+   - Phone: `+96895188386`
+   - Mobile payment via Omannet app
+
+### How to Deposit
+
+1. Click the **"+ Deposit"** button in the sidebar
+2. Select your preferred payment method
+3. Follow the instructions to send payment
+4. Enter the amount you sent
+5. Click "Confirm Deposit"
+6. Your balance will be updated instantly (demo mode) or after verification (production)
+
+### Payment Verification
+
+**Demo Mode:** Deposits are simulated instantly for testing purposes.
+
+**Production Mode:** In a live environment, you would:
+- Verify payments through payment processor APIs
+- Match payments to player accounts using reference IDs
+- Add funds only after confirmed receipt
+
 ## 🔧 Configuration
 
 In `server.js`:
@@ -87,4 +127,15 @@ In `server.js`:
 const MAX_BET = 10;              // Maximum bet amount
 const SERVICE_CHARGE_PERCENT = 5; // Service fee percentage
 const INITIAL_BALANCE = 100;     // Starting balance
+```
+
+### Payment Details
+
+Update these in the PaymentModal component:
+```javascript
+// PayPal
+paypalEmail: 'fhs_alhinai@hotmail.com'
+
+// Mobile Payments (Apple Pay, Google Pay, Omannet)
+mobileNumber: '+96895188386'
 ```

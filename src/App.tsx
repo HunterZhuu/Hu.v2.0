@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import PriceChart from './components/PriceChart';
+import PaymentModal from './components/PaymentModal';
 import { CandleData, GameResult } from './types';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
@@ -122,6 +123,9 @@ export default function App() {
   const [betError, setBetError] = useState('');
   const [hostBetPlaced, setHostBetPlaced] = useState(false);
   const [challengerBetPlaced, setChallengerBetPlaced] = useState(false);
+
+  // Payment modal state
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   // Demo mode data
   const demoData = useDemoMode(demoMode && !connected);
@@ -300,6 +304,19 @@ export default function App() {
     setMessage('Prediction locked!');
   }, [socket, prediction]);
 
+  // Handle deposit from payment modal
+  const handleDeposit = useCallback((amount: number, method: string) => {
+    if (connected && socket) {
+      // Multiplayer mode - emit deposit to server
+      socket.emit('deposit', { amount, method });
+    } else {
+      // Demo mode - update balance directly
+      setBalance(prev => prev + amount);
+    }
+    setMessage(`Deposited $${amount.toFixed(2)} via ${method}`);
+    setTimeout(() => setMessage(''), 3000);
+  }, [connected, socket]);
+
   // Demo mode betting
   const placeDemoBet = useCallback(() => {
     if (!betAmount) return;
@@ -458,8 +475,17 @@ export default function App() {
           {/* Balance & Role */}
           <div className="p-4 border-b border-gray-800">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs text-gray-500">Your Balance</span>
-              <span className="text-lg font-bold text-green-400">${balance.toFixed(2)}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">Your Balance</span>
+                <span className="text-lg font-bold text-green-400">${balance.toFixed(2)}</span>
+              </div>
+              <button
+                onClick={() => setShowPaymentModal(true)}
+                className="px-3 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white text-xs font-bold rounded transition-all flex items-center gap-1"
+              >
+                <span>+</span>
+                <span>Deposit</span>
+              </button>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-xs text-gray-500">Your Role</span>
@@ -773,6 +799,14 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Payment Modal */}
+      <PaymentModal
+        isOpen={showPaymentModal}
+        onClose={() => setShowPaymentModal(false)}
+        onDeposit={handleDeposit}
+        currentBalance={balance}
+      />
     </div>
   );
 }
