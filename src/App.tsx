@@ -103,6 +103,19 @@ function useDemoMode(enabled: boolean, selectedAsset: TradingAsset) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastPriceRef = useRef<number>(0);
 
+  // Reset everything when asset changes
+  useEffect(() => {
+    setCandles([]);
+    setCurrentPrice(0);
+    setDataSource('Loading...');
+    lastPriceRef.current = 0;
+    
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, [selectedAsset.id]);
+
   useEffect(() => {
     if (!enabled) return;
 
@@ -288,10 +301,20 @@ export default function App() {
     if (demoMode && !connected) {
       setCandles(demoData.candles);
       setCurrentPrice(demoData.currentPrice);
+    } else if (!demoMode || connected) {
+      // Clear demo data when not in demo mode
+      setCandles([]);
+      setCurrentPrice(0);
     }
   }, [demoData.candles, demoData.currentPrice, demoMode, connected]);
 
   useEffect(() => {
+    // Clear old data when switching assets
+    setCandles([]);
+    setCurrentPrice(0);
+    setOpenPrice(0);
+    setDataSource(null);
+
     const newSocket = io(getServerUrl(selectedAsset.id), { transports: ['websocket', 'polling'], timeout: 5000 });
 
     newSocket.on('connect', () => {
@@ -794,7 +817,16 @@ export default function App() {
             <AssetSelector
               selectedAsset={selectedAsset}
               onAssetChange={(asset) => {
+                // Clear old data immediately
+                setCandles([]);
+                setCurrentPrice(0);
+                setOpenPrice(0);
+                setDataSource(null);
+                
+                // Update selected asset
                 setSelectedAsset(asset);
+                
+                // Notify server if connected
                 if (socket) {
                   socket.emit('select_asset', asset.id);
                 }
