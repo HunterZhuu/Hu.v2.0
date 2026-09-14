@@ -7,13 +7,15 @@ export interface CandleData {
 }
 
 export interface GameState {
-  status: 'waiting' | 'predicting' | 'resolved';
+  status: 'waiting' | 'betting' | 'predicting' | 'resolved';
   asset: string;
   currentOpenPrice: number;
   targetClosePrice: number | null;
+  pot: number;
+  serviceCharge: number;
   players: {
-    host: { id: string | null; name: string; prediction: number | null };
-    challenger: { id: string | null; name: string; prediction: number | null };
+    host: { id: string | null; name: string; prediction: number | null; bet: number; balance: number };
+    challenger: { id: string | null; name: string; prediction: number | null; bet: number; balance: number };
   };
 }
 
@@ -22,4 +24,13 @@ export interface GameResult {
   hostDiff: string;
   challengerDiff: string;
   winner: string;
+  winnerPayout?: string;
+  pot?: string;
+  serviceChargeCollected?: string;
+}
+
+export interface PlayerBet {
+  player: string;
+  bet: number;
+  serviceCharge: number;
 }
