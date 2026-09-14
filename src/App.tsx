@@ -1,44 +1,32 @@
 import { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import TradingViewChart from './components/TradingViewChart';
-import AssetSelector from './components/AssetSelector';
+import MarketOverview from './components/MarketOverview';
+import PlayerSearch, { Player, MOCK_PLAYERS } from './components/PlayerSearch';
+import UserProfile from './components/UserProfile';
+import ChallengeModal from './components/ChallengeModal';
 import { CandleData, GameResult, TradeDirection, TradingAsset, TRADING_ASSETS } from './types';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3000';
-const MAX_BET = 10;
-const SERVICE_FEE = 5; // 5%
+const SERVICE_FEE = 5;
 const INITIAL_BALANCE = 100;
 
-// Fetch live prices from free APIs
-async function fetchLivePrice(asset: TradingAsset): Promise<{ price: number; source: string } | null> {
-  try {
-    if (asset.category === 'crypto') {
-      const symbol = asset.binanceSymbol || `${asset.id}usdt`;
-      const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol.toUpperCase()}`, {
-        signal: AbortSignal.timeout(3000)
-      });
-      const data = await res.json();
-      if (data.price) return { price: parseFloat(data.price), source: 'Binance' };
-    } else if (asset.id === 'gold' || asset.id === 'silver') {
-      const metal = asset.id === 'gold' ? 'XAU' : 'XAG';
-      const res = await fetch(`https://api.frankfurter.app/latest?from=USD&to=${metal}`, {
-        signal: AbortSignal.timeout(3000)
-      });
-      const data = await res.json();
-      if (data.rates?.[metal]) return { price: 1 / data.rates[metal], source: 'Frankfurter' };
-    } else if (asset.id === 'oil') {
-      const res = await fetch('https://api.api-ninjas.com/v1/commodityprice?name=crude_oil', {
-        headers: { 'X-Api-Key': 'demo' },
-        signal: AbortSignal.timeout(3000)
-      });
-      const data = await res.json();
-      if (data.price) return { price: data.price, source: 'API Ninjas' };
-    }
-  } catch (err) {
-    console.error('Price fetch failed:', err);
-  }
-  return null;
-}
+// Current user (simulated)
+const CURRENT_USER: Player = {
+  id: 'current',
+  username: 'You',
+  rank: 15,
+  wins: 42,
+  losses: 28,
+  winRate: 60,
+  streak: 3,
+  totalEarnings: 320.50,
+  status: 'online',
+  favoriteAsset: 'BTC/USDT',
+  lastActive: 'Now'
+};
+
+type GameStatus = 'waiting' | 'setup' | 'resolved';
 
 export default function App() {
   // Core state
@@ -49,12 +37,9 @@ export default function App() {
   // Asset & price
   const [selectedAsset, setSelectedAsset] = useState<TradingAsset>(TRADING_ASSETS[0]);
   const [currentPrice, setCurrentPrice] = useState(0);
-  const [openPrice, setOpenPrice] = useState(0);
-  const [candles, setCandles] = useState<CandleData[]>([]);
-  const [dataSource, setDataSource] = useState('');
   
   // Game state
-  const [gameStatus, setGameStatus] = useState<'waiting' | 'setup' | 'resolved'>('waiting');
+  const [gameStatus, setGameStatus] = useState<GameStatus>('waiting');
   const [timerDuration, setTimerDuration] = useState<30 | 60>(60);
   const [countdown, setCountdown] = useState(0);
   const [betAmount, setBetAmount] = useState(0);
@@ -67,67 +52,11 @@ export default function App() {
   const [message, setMessage] = useState('');
   
   // UI state
-  const [showAssets, setShowAssets] = useState(false);
-  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showChallenge, setShowChallenge] = useState(false);
+  const [challengedPlayer, setChallengedPlayer] = useState<Player | null>(null);
+  const [activeTab, setActiveTab] = useState<'markets' | 'players'>('markets');
   
   const countdownRef = useRef<any>(null);
-  const priceIntervalRef = useRef<any>(null);
-
-  // Load scores
-  useEffect(() => {
-    const saved = localStorage.getItem('pipduel_scores');
-    if (saved) setScores(JSON.parse(saved));
-  }, []);
-
-  // Save scores
-  useEffect(() => {
-    localStorage.setItem('pipduel_scores', JSON.stringify(scores));
-  }, [scores]);
-
-  // Fetch prices for demo mode
-  useEffect(() => {
-    if (!demoMode) return;
-
-    const updatePrice = async () => {
-      const data = await fetchLivePrice(selectedAsset);
-      if (data) {
-        setCurrentPrice(data.price);
-        setDataSource(data.source);
-        
-        // Update candles
-        const now = Math.floor(Date.now() / 1000);
-        const candleTime = now - (now % 60);
-        
-        setCandles(prev => {
-          const last = prev[prev.length - 1];
-          if (last && last.time === candleTime) {
-            return [...prev.slice(0, -1), {
-              ...last,
-              close: data.price,
-              high: Math.max(last.high, data.price),
-              low: Math.min(last.low, data.price)
-            }];
-          } else {
-            const newCandle = {
-              time: candleTime,
-              open: data.price,
-              high: data.price,
-              low: data.price,
-              close: data.price
-            };
-            return [...prev, newCandle].slice(-60);
-          }
-        });
-      }
-    };
-
-    updatePrice();
-    priceIntervalRef.current = setInterval(updatePrice, selectedAsset.category === 'crypto' ? 2000 : 5000);
-
-    return () => {
-      if (priceIntervalRef.current) clearInterval(priceIntervalRef.current);
-    };
-  }, [demoMode, selectedAsset]);
 
   // Socket connection
   useEffect(() => {
@@ -145,21 +74,6 @@ export default function App() {
     });
 
     newSocket.on('disconnect', () => setConnected(false));
-
-    newSocket.on('price_update', (data: any) => {
-      if (data.asset !== selectedAsset.id) return;
-      setCurrentPrice(data.close);
-      setOpenPrice(data.open);
-      setDataSource(data.source || 'Server');
-      
-      setCandles(prev => {
-        const last = prev[prev.length - 1];
-        if (last && Math.abs(last.time - data.time) < 2) {
-          return [...prev.slice(0, -1), data];
-        }
-        return [...prev, data].slice(-60);
-      });
-    });
 
     newSocket.on('game_resolved', (data: GameResult) => {
       setResult(data);
@@ -186,7 +100,7 @@ export default function App() {
     return () => {
       newSocket.close();
     };
-  }, [demoMode, selectedAsset.id]);
+  }, [demoMode]);
 
   // Countdown timer
   useEffect(() => {
@@ -207,30 +121,23 @@ export default function App() {
     };
   }, [gameStatus, countdown]);
 
-  // Reset when asset changes
-  useEffect(() => {
-    setCandles([]);
-    setCurrentPrice(0);
-    setDataSource('Loading...');
-  }, [selectedAsset.id]);
-
-  const startGame = () => {
+  const startGame = (amount: number, asset?: TradingAsset) => {
+    if (asset) setSelectedAsset(asset);
+    setBetAmount(amount);
     setGameStatus('setup');
     setMyDirection(null);
-    setBetAmount(0);
     setResult(null);
   };
 
-  const placeBet = (amount: number, direction: TradeDirection) => {
-    if (amount > balance) {
+  const placeBet = (direction: TradeDirection) => {
+    if (betAmount > balance) {
       setMessage('Insufficient balance');
       setTimeout(() => setMessage(''), 3000);
       return;
     }
 
-    const fee = amount * (SERVICE_FEE / 100);
-    setBalance(prev => prev - amount - fee);
-    setBetAmount(amount);
+    const fee = betAmount * (SERVICE_FEE / 100);
+    setBalance(prev => prev - betAmount - fee);
     setMyDirection(direction);
     setGameStatus('resolved');
     setCountdown(timerDuration);
@@ -250,14 +157,14 @@ export default function App() {
 
         if (iCorrect && !oppCorrect) {
           winner = 'host';
-          payout = (amount * 2).toFixed(2);
-          setBalance(prev => prev + amount * 2);
+          payout = (betAmount * 2).toFixed(2);
+          setBalance(prev => prev + betAmount * 2);
         } else if (!iCorrect && oppCorrect) {
           winner = 'challenger';
-          payout = (amount * 2).toFixed(2);
+          payout = (betAmount * 2).toFixed(2);
         } else {
-          payout = amount.toFixed(2);
-          setBalance(prev => prev + amount);
+          payout = betAmount.toFixed(2);
+          setBalance(prev => prev + betAmount);
         }
 
         setResult({
@@ -270,15 +177,20 @@ export default function App() {
           challengerCorrect: oppCorrect,
           winner,
           winnerPayout: payout,
-          pot: (amount * 2).toFixed(2),
+          pot: (betAmount * 2).toFixed(2),
           serviceChargeCollected: (fee * 2).toFixed(2),
           hostScore: scores.host + (winner === 'host' ? 1 : 0),
           challengerScore: scores.challenger + (winner === 'challenger' ? 1 : 0)
         });
       }, timerDuration * 1000);
     } else if (socket) {
-      socket.emit('place_bet', { amount, direction });
+      socket.emit('place_bet', { amount: betAmount, direction });
     }
+  };
+
+  const handleChallenge = (player: Player) => {
+    setChallengedPlayer(player);
+    setShowChallenge(true);
   };
 
   const resetGame = () => {
@@ -290,37 +202,38 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0e14] text-white font-mono">
+    <div className="min-h-screen bg-[#0a0e14] text-white">
       {/* Header */}
-      <header className="border-b border-gray-800 px-4 py-3 bg-[#0f1419] sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
+      <header className="border-b border-gray-800 px-4 py-3 bg-[#0f1419] sticky top-0 z-40">
+        <div className="max-w-[1920px] mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-4">
             <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
               ⚔️ PipDuel
             </h1>
-            <button
-              onClick={() => setShowAssets(!showAssets)}
-              className="px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded text-sm flex items-center gap-2"
-            >
+            <div className="hidden md:flex items-center gap-2 text-sm">
               <span style={{ color: selectedAsset.color }}>{selectedAsset.icon}</span>
-              <span>{selectedAsset.symbol}</span>
-            </button>
+              <span className="font-bold">{selectedAsset.symbol}</span>
+              <span className="text-gray-500">•</span>
+              <span className="text-2xl font-bold" style={{ color: selectedAsset.color }}>
+                ${currentPrice > 0 ? currentPrice.toFixed(selectedAsset.pricePrecision) : '---'}
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="text-right">
+            <div className="text-right hidden sm:block">
               <div className="text-xs text-gray-500">Balance</div>
               <div className="text-sm font-bold text-green-400">${balance.toFixed(2)}</div>
             </div>
             
             <div className="flex items-center gap-2">
               <div className="text-center">
-                <div className="text-xs text-blue-400">Host</div>
+                <div className="text-xs text-blue-400">You</div>
                 <div className="text-lg font-bold">{scores.host}</div>
               </div>
               <div className="text-gray-600">vs</div>
               <div className="text-center">
-                <div className="text-xs text-purple-400">Guest</div>
+                <div className="text-xs text-purple-400">Opp</div>
                 <div className="text-lg font-bold">{scores.challenger}</div>
               </div>
             </div>
@@ -335,136 +248,137 @@ export default function App() {
             >
               {demoMode ? '🎮 Demo' : '🌐 Live'}
             </button>
-
-            <button
-              onClick={() => setShowLeaderboard(!showLeaderboard)}
-              className="px-3 py-1 bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 rounded text-xs font-bold"
-            >
-              🏆
-            </button>
           </div>
         </div>
       </header>
 
-      {/* Asset Selector Modal */}
-      {showAssets && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0f1419] border border-gray-700 rounded-lg max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="p-4 border-b border-gray-800 flex justify-between items-center">
-              <h2 className="text-lg font-bold">Select Asset</h2>
-              <button onClick={() => setShowAssets(false)} className="text-gray-400 hover:text-white">✕</button>
-            </div>
-            <AssetSelector
-              selectedAsset={selectedAsset}
-              onAssetChange={(asset) => {
-                setSelectedAsset(asset);
-                setShowAssets(false);
-              }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Leaderboard Modal */}
-      {showLeaderboard && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0f1419] border border-gray-700 rounded-lg max-w-md w-full max-h-[80vh] overflow-y-auto">
-            <div className="p-4 border-b border-gray-800 flex justify-between items-center">
-              <h2 className="text-lg font-bold">🏆 Leaderboard</h2>
-              <button onClick={() => setShowLeaderboard(false)} className="text-gray-400 hover:text-white">✕</button>
-            </div>
-            <div className="p-4">
-              <div className="text-center text-gray-500 py-8">
-                <div className="text-4xl mb-2">🏆</div>
-                <div className="text-sm">Leaderboard coming soon!</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto p-4">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Chart Section */}
-          <div className="lg:col-span-2 space-y-4">
-            {/* Price Display */}
+      <div className="max-w-[1920px] mx-auto p-4">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          {/* Left Sidebar - Markets & Players */}
+          <div className="lg:col-span-3 space-y-4">
+            {/* User Profile */}
+            <UserProfile
+              username={CURRENT_USER.username}
+              balance={balance}
+              wins={CURRENT_USER.wins}
+              losses={CURRENT_USER.losses}
+              winRate={CURRENT_USER.winRate}
+              streak={CURRENT_USER.streak}
+              totalEarnings={CURRENT_USER.totalEarnings}
+              rank={CURRENT_USER.rank}
+              isPremium={false}
+            />
+
+            {/* Tab Switcher */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setActiveTab('markets')}
+                className={`flex-1 py-2 rounded text-sm font-bold transition-all ${
+                  activeTab === 'markets'
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                }`}
+              >
+                📊 Markets
+              </button>
+              <button
+                onClick={() => setActiveTab('players')}
+                className={`flex-1 py-2 rounded text-sm font-bold transition-all ${
+                  activeTab === 'players'
+                    ? 'bg-amber-600 text-white'
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                }`}
+              >
+                👥 Players
+              </button>
+            </div>
+
+            {/* Markets or Players */}
+            {activeTab === 'markets' ? (
+              <MarketOverview
+                onSelectAsset={setSelectedAsset}
+                selectedAsset={selectedAsset}
+              />
+            ) : (
+              <PlayerSearch
+                onChallenge={handleChallenge}
+                currentUser={CURRENT_USER}
+              />
+            )}
+          </div>
+
+          {/* Center - Chart & Game */}
+          <div className="lg:col-span-6 space-y-4">
+            {/* Chart */}
             <div className="bg-[#0f1419] border border-gray-800 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <div className="text-xs text-gray-500 flex items-center gap-1">
-                    <span style={{ color: selectedAsset.color }}>{selectedAsset.icon}</span>
-                    <span>{selectedAsset.symbol}</span>
-                    {dataSource && <span className="text-green-400">●</span>}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl" style={{ color: selectedAsset.color }}>
+                    {selectedAsset.icon}
+                  </span>
+                  <div>
+                    <div className="font-bold text-white">{selectedAsset.symbol}</div>
+                    <div className="text-xs text-gray-500">{selectedAsset.name}</div>
                   </div>
-                  <div className="text-3xl font-bold" style={{ color: selectedAsset.color }}>
-                    ${currentPrice > 0 ? currentPrice.toFixed(selectedAsset.pricePrecision) : '---'}
-                  </div>
-                  {dataSource && (
-                    <div className="text-xs text-gray-500 mt-1">{dataSource}</div>
-                  )}
                 </div>
-                
                 {gameStatus === 'resolved' && countdown > 0 && (
-                  <div className="text-right">
-                    <div className="text-xs text-gray-500">Result in</div>
-                    <div className={`text-4xl font-bold ${
-                      countdown <= 5 ? 'text-red-500 animate-pulse' :
-                      countdown <= 15 ? 'text-yellow-500' : 'text-green-500'
-                    }`}>
-                      {countdown}s
-                    </div>
+                  <div className={`text-3xl font-bold ${
+                    countdown <= 5 ? 'text-red-500 animate-pulse' :
+                    countdown <= 15 ? 'text-yellow-500' : 'text-green-500'
+                  }`}>
+                    {countdown}s
                   </div>
                 )}
               </div>
-            </div>
-
-            {/* Chart */}
-            <div className="bg-[#0f1419] border border-gray-800 rounded-lg p-4">
               <div className="h-[500px]">
                 <TradingViewChart asset={selectedAsset} height={500} />
               </div>
             </div>
-          </div>
 
-          {/* Sidebar */}
-          <div className="space-y-4">
-            {/* Timer Selection */}
+            {/* Game Controls */}
             {gameStatus === 'waiting' && (
               <div className="bg-[#0f1419] border border-gray-800 rounded-lg p-4">
-                <h3 className="text-sm font-bold mb-3">Round Duration</h3>
-                <div className="grid grid-cols-2 gap-2">
+                <h3 className="text-sm font-bold mb-3">Start a Round</h3>
+                <div className="flex gap-2 mb-3">
                   <button
                     onClick={() => setTimerDuration(30)}
-                    className={`py-3 rounded font-bold ${
+                    className={`flex-1 py-2 rounded font-bold text-sm ${
                       timerDuration === 30
                         ? 'bg-gradient-to-r from-orange-600 to-red-600 text-white'
                         : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
                     }`}
                   >
-                    <div className="text-2xl">⚡</div>
-                    <div className="text-sm">30s</div>
+                    ⚡ 30s
                   </button>
                   <button
                     onClick={() => setTimerDuration(60)}
-                    className={`py-3 rounded font-bold ${
+                    className={`flex-1 py-2 rounded font-bold text-sm ${
                       timerDuration === 60
                         ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white'
                         : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
                     }`}
                   >
-                    <div className="text-2xl">⏱️</div>
-                    <div className="text-sm">60s</div>
+                    ⏱️ 60s
                   </button>
                 </div>
-              </div>
-            )}
-
-            {/* Game Controls */}
-            {gameStatus === 'waiting' && (
-              <div className="bg-[#0f1419] border border-gray-800 rounded-lg p-4">
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  {[10, 15, 20].map(amount => (
+                    <button
+                      key={amount}
+                      onClick={() => startGame(amount)}
+                      className={`py-3 rounded font-bold ${
+                        betAmount === amount
+                          ? 'bg-gradient-to-r from-green-600 to-emerald-600 text-white'
+                          : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                      }`}
+                    >
+                      ${amount}
+                    </button>
+                  ))}
+                </div>
                 <button
-                  onClick={startGame}
+                  onClick={() => startGame(betAmount || 10)}
                   className="w-full py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-bold rounded"
                 >
                   Start Round
@@ -474,95 +388,70 @@ export default function App() {
 
             {/* Betting Phase */}
             {gameStatus === 'setup' && (
-              <div className="bg-[#0f1419] border border-gray-800 rounded-lg p-4 space-y-4">
-                <div>
-                  <h3 className="text-sm font-bold mb-2">Bet Amount</h3>
-                  <div className="grid grid-cols-3 gap-2 mb-2">
-                    {[10, 15, 20].map(amount => (
-                      <button
-                        key={amount}
-                        onClick={() => setBetAmount(amount)}
-                        className={`py-2 rounded font-bold ${
-                          betAmount === amount
-                            ? 'bg-green-600 text-white'
-                            : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                        }`}
-                      >
-                        ${amount}
-                      </button>
-                    ))}
-                  </div>
-                  <input
-                    type="number"
-                    min="1"
-                    max={MAX_BET}
-                    value={betAmount || ''}
-                    onChange={(e) => setBetAmount(parseFloat(e.target.value) || 0)}
-                    placeholder="Custom"
-                    className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm"
-                  />
+              <div className="bg-[#0f1419] border border-gray-800 rounded-lg p-4">
+                <h3 className="text-sm font-bold mb-3">Your Prediction</h3>
+                <p className="text-xs text-gray-400 mb-3">
+                  Will {selectedAsset.name} price go UP or DOWN?
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => placeBet('buy')}
+                    className="py-6 bg-gradient-to-br from-green-600 to-emerald-700 hover:from-green-500 hover:to-emerald-600 rounded font-bold"
+                  >
+                    <div className="text-4xl mb-1">📈</div>
+                    <div className="text-lg">BUY</div>
+                    <div className="text-xs opacity-75">Price goes UP</div>
+                  </button>
+                  <button
+                    onClick={() => placeBet('sell')}
+                    className="py-6 bg-gradient-to-br from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 rounded font-bold"
+                  >
+                    <div className="text-4xl mb-1">📉</div>
+                    <div className="text-lg">SELL</div>
+                    <div className="text-xs opacity-75">Price goes DOWN</div>
+                  </button>
                 </div>
-
-                {betAmount > 0 && (
-                  <div>
-                    <h3 className="text-sm font-bold mb-2">Your Prediction</h3>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => placeBet(betAmount, 'buy')}
-                        className="py-4 bg-gradient-to-br from-green-600 to-emerald-700 hover:from-green-500 hover:to-emerald-600 rounded font-bold"
-                      >
-                        <div className="text-3xl">📈</div>
-                        <div>BUY</div>
-                      </button>
-                      <button
-                        onClick={() => placeBet(betAmount, 'sell')}
-                        className="py-4 bg-gradient-to-br from-red-600 to-rose-700 hover:from-red-500 hover:to-rose-600 rounded font-bold"
-                      >
-                        <div className="text-3xl">📉</div>
-                        <div>SELL</div>
-                      </button>
-                    </div>
-                    <div className="mt-2 text-xs text-gray-400 text-center">
-                      Fee: ${((betAmount * SERVICE_FEE) / 100).toFixed(2)} | 
-                      Total: ${(betAmount + (betAmount * SERVICE_FEE) / 100).toFixed(2)}
-                    </div>
-                  </div>
-                )}
+                <div className="mt-3 text-xs text-gray-400 text-center">
+                  Bet: <span className="text-white font-bold">${betAmount}</span> | 
+                  Fee: <span className="text-amber-400">${(betAmount * SERVICE_FEE / 100).toFixed(2)}</span> | 
+                  Pot: <span className="text-green-400 font-bold">${(betAmount * 2).toFixed(2)}</span>
+                </div>
               </div>
             )}
 
             {/* Results */}
             {gameStatus === 'resolved' && result && (
-              <div className="bg-[#0f1419] border border-gray-800 rounded-lg p-4 space-y-3">
-                <div className="text-center">
+              <div className="bg-[#0f1419] border border-gray-800 rounded-lg p-4">
+                <div className="text-center mb-4">
                   {result.winner === 'host' && (
-                    <div className="text-2xl font-bold text-green-400 mb-2">🏆 YOU WIN!</div>
+                    <div className="text-3xl font-bold text-green-400 mb-2">🏆 YOU WIN!</div>
                   )}
                   {result.winner === 'challenger' && (
-                    <div className="text-2xl font-bold text-red-400 mb-2">💀 YOU LOSE</div>
+                    <div className="text-3xl font-bold text-red-400 mb-2">💀 YOU LOSE</div>
                   )}
                   {result.winner === 'Draw' && (
-                    <div className="text-2xl font-bold text-yellow-400 mb-2">🤝 DRAW</div>
+                    <div className="text-3xl font-bold text-yellow-400 mb-2">🤝 DRAW</div>
                   )}
                 </div>
 
-                <div className="bg-gray-800/50 rounded p-3">
+                <div className="bg-gray-800/50 rounded p-3 mb-3">
                   <div className="text-xs text-gray-400 mb-1">Price Movement</div>
                   <div className="flex items-center justify-between text-sm">
                     <span>${result.openPrice.toFixed(selectedAsset.pricePrecision)}</span>
                     <span className={result.priceChange >= 0 ? 'text-green-400' : 'text-red-400'}>
                       → ${result.targetClosePrice.toFixed(selectedAsset.pricePrecision)}
+                      <span className="ml-2">({result.priceChange >= 0 ? '+' : ''}{result.priceChange.toFixed(selectedAsset.pricePrecision)})</span>
                     </span>
                   </div>
                 </div>
 
-                <div className="space-y-2">
+                <div className="space-y-2 mb-3">
                   <div className={`flex justify-between p-2 rounded ${
                     result.hostCorrect ? 'bg-green-900/20' : 'bg-red-900/20'
                   }`}>
                     <span>You ({result.hostBetDirection === 'buy' ? 'BUY' : 'SELL'})</span>
                     <span className={result.hostCorrect ? 'text-green-400' : 'text-red-400'}>
-                      {result.hostCorrect ? '✓' : '✗'}
+                      {result.hostCorrect ? '✓ Correct' : '✗ Wrong'}
                     </span>
                   </div>
                   <div className={`flex justify-between p-2 rounded ${
@@ -570,7 +459,7 @@ export default function App() {
                   }`}>
                     <span>Opponent ({result.challengerBetDirection === 'buy' ? 'BUY' : 'SELL'})</span>
                     <span className={result.challengerCorrect ? 'text-green-400' : 'text-red-400'}>
-                      {result.challengerCorrect ? '✓' : '✗'}
+                      {result.challengerCorrect ? '✓ Correct' : '✗ Wrong'}
                     </span>
                   </div>
                 </div>
@@ -578,7 +467,7 @@ export default function App() {
                 {countdown === 0 && (
                   <button
                     onClick={resetGame}
-                    className="w-full py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold rounded"
+                    className="w-full py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold rounded"
                   >
                     Play Again
                   </button>
@@ -592,25 +481,76 @@ export default function App() {
                 {message}
               </div>
             )}
+          </div>
 
-            {/* Info */}
-            <div className="bg-[#0f1419] border border-gray-800 rounded-lg p-4 text-xs text-gray-500 space-y-1">
-              <div className="flex justify-between">
-                <span>Mode:</span>
-                <span>{demoMode ? 'Demo' : 'Live'}</span>
+          {/* Right Sidebar - Quick Info */}
+          <div className="lg:col-span-3 space-y-4">
+            {/* Quick Stats */}
+            <div className="bg-[#0f1419] border border-gray-800 rounded-lg p-4">
+              <h3 className="text-sm font-bold mb-3">Quick Stats</h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Timer:</span>
+                  <span className="text-white font-bold">{timerDuration}s</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Service Fee:</span>
+                  <span className="text-amber-400 font-bold">{SERVICE_FEE}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Mode:</span>
+                  <span className={demoMode ? 'text-amber-400' : 'text-green-400'}>
+                    {demoMode ? 'Demo' : 'Live'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Connection:</span>
+                  <span className={connected ? 'text-green-400' : 'text-red-400'}>
+                    {connected ? '● Online' : '● Offline'}
+                  </span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span>Max Bet:</span>
-                <span>${MAX_BET}</span>
+            </div>
+
+            {/* Recent Activity */}
+            <div className="bg-[#0f1419] border border-gray-800 rounded-lg p-4">
+              <h3 className="text-sm font-bold mb-3">Recent Activity</h3>
+              <div className="space-y-2 text-xs text-gray-400">
+                <div className="flex items-center gap-2">
+                  <span className="text-green-400">✓</span>
+                  <span>Won $10 on BTC/USDT</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-red-400">✗</span>
+                  <span>Lost $15 on ETH/USDT</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-green-400">✓</span>
+                  <span>Won $20 on XAU/USD</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span>Fee:</span>
-                <span>{SERVICE_FEE}%</span>
-              </div>
+            </div>
+
+            {/* Tips */}
+            <div className="bg-gradient-to-br from-blue-900/20 to-purple-900/20 border border-blue-800/30 rounded-lg p-4">
+              <h3 className="text-sm font-bold mb-2 text-blue-400">💡 Pro Tip</h3>
+              <p className="text-xs text-gray-400">
+                Challenge online players for 1v1 duels! Higher ranked players offer bigger challenges and bigger rewards.
+              </p>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Challenge Modal */}
+      {showChallenge && challengedPlayer && (
+        <ChallengeModal
+          isOpen={showChallenge}
+          onClose={() => setShowChallenge(false)}
+          opponent={challengedPlayer}
+          onStartGame={startGame}
+        />
+      )}
     </div>
   );
 }
