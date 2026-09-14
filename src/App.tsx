@@ -220,6 +220,10 @@ export default function App() {
 
   // Asset selection state
   const [selectedAsset, setSelectedAsset] = useState<TradingAsset>(TRADING_ASSETS[0]); // Default to BTC
+  
+  // Data source tracking
+  const [dataSource, setDataSource] = useState<{ source: string; status: string; message: string } | null>(null);
+  const [lastPriceUpdate, setLastPriceUpdate] = useState<number>(Date.now());
 
   // Demo mode data
   const demoData = useDemoMode(demoMode && !connected);
@@ -298,9 +302,31 @@ export default function App() {
       setCandleCountdown(timerDuration);
     });
 
-    newSocket.on('price_update', (data: CandleData) => {
+    newSocket.on('data_source_update', (data: { assetId: string; source: string; status: string; message: string }) => {
+      if (data.assetId === selectedAsset.id) {
+        setDataSource({ source: data.source, status: data.status, message: data.message });
+      }
+    });
+
+    newSocket.on('asset_switched', (data: { assetId: string; asset: any }) => {
+      const asset = TRADING_ASSETS.find(a => a.id === data.assetId);
+      if (asset) {
+        setSelectedAsset(asset);
+        setDataSource({ source: data.asset.source, status: 'connecting', message: `Connecting to ${data.asset.name}...` });
+      }
+    });
+
+    newSocket.on('price_update', (data: any) => {
+      if (data.asset !== selectedAsset.id) return;
+      
       setCurrentPrice(data.close);
       setOpenPrice(data.open);
+      setLastPriceUpdate(data.timestamp || Date.now());
+      
+      if (data.source) {
+        setDataSource(prev => prev ? { ...prev, status: 'live' } : { source: data.source, status: 'live', message: `Live data from ${data.source}` });
+      }
+      
       setCandles((prev) => {
         const newCandles = [...prev];
         const lastCandle = newCandles[newCandles.length - 1];
@@ -550,6 +576,20 @@ export default function App() {
             <span>{selectedAsset.symbol}</span>
             <span>• Buy or Sell</span>
           </span>
+          {dataSource && (
+            <div className="flex items-center gap-2">
+              <span className={`text-xs px-2 py-0.5 rounded ${
+                dataSource.status === 'live' 
+                  ? 'bg-green-900/40 text-green-400 border border-green-700/50' 
+                  : dataSource.status === 'connecting'
+                  ? 'bg-yellow-900/40 text-yellow-400 border border-yellow-700/50'
+                  : 'bg-red-900/40 text-red-400 border border-red-700/50'
+              }`}>
+                {dataSource.status === 'live' ? '● LIVE' : dataSource.status === 'connecting' ? '◌ CONNECTING' : '● ERROR'}
+              </span>
+              <span className="text-xs text-gray-500 hidden md:inline">{dataSource.source}</span>
+            </div>
+          )}
           {demoMode && !connected && (
             <span className="text-xs px-2 py-0.5 bg-amber-900/40 text-amber-400 rounded border border-amber-700/50">
               DEMO
@@ -609,10 +649,18 @@ export default function App() {
               <div className="text-xs text-gray-500 flex items-center gap-1">
                 <span style={{ color: selectedAsset.color }}>{selectedAsset.icon}</span>
                 <span>{selectedAsset.symbol}</span>
+                {dataSource?.status === 'live' && (
+                  <span className="ml-1 text-green-400">●</span>
+                )}
               </div>
               <div className="text-2xl font-bold" style={{ color: selectedAsset.color }}>
                 ${currentPrice > 0 ? currentPrice.toFixed(selectedAsset.pricePrecision) : '---'}
               </div>
+              {lastPriceUpdate > 0 && (
+                <div className="text-xs text-gray-600 mt-0.5">
+                  Updated: {new Date(lastPriceUpdate).toLocaleTimeString()}
+                </div>
+              )}
             </div>
             {openPrice > 0 && (
               <div className="hidden sm:block">
@@ -695,7 +743,12 @@ export default function App() {
           {(gameStatus === 'waiting' || gameStatus === 'setup') && (
             <AssetSelector
               selectedAsset={selectedAsset}
-              onAssetChange={setSelectedAsset}
+              onAssetChange={(asset) => {
+                setSelectedAsset(asset);
+                if (socket) {
+                  socket.emit('select_asset', asset.id);
+                }
+              }}
             />
           )}
 
