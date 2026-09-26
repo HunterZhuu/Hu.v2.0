@@ -1,7 +1,7 @@
-import { LeaderboardEntry } from '../types';
+import { Player } from '../types';
 
 interface LeaderboardProps {
-  entries: LeaderboardEntry[];
+  entries: Player[];
   currentPlayerId?: string;
 }
 
@@ -44,7 +44,7 @@ export default function Leaderboard({ entries, currentPlayerId }: LeaderboardPro
                 <div className="text-lg w-8 text-center">{rankIcon}</div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-white">{entry.name}</span>
+                    <span className="text-sm font-bold text-white">{entry.username}</span>
                     {isCurrentPlayer && (
                       <span className="text-xs px-1.5 py-0.5 bg-blue-600 text-white rounded">YOU</span>
                     )}
