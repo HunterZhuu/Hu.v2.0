@@ -34,6 +34,7 @@ export default function App() {
   const [countdown, setCountdown] = useState(0);
   const [betAmount, setBetAmount] = useState(0);
   const [myDirection, setMyDirection] = useState<TradeDirection | null>(null);
+  const [opponentDirection, setOpponentDirection] = useState<TradeDirection | null>(null);
   const [result, setResult] = useState<GameResult | null>(null);
   const [balance, setBalance] = useState(INITIAL_BALANCE);
   const [scores, setScores] = useState({ host: 0, challenger: 0 });
@@ -123,6 +124,7 @@ export default function App() {
     
     // Opponent makes a random choice (50/50 chance)
     const opponentDir: TradeDirection = Math.random() > 0.5 ? 'buy' : 'sell';
+    setOpponentDirection(opponentDir);
     
     const iCorrect = (direction === 'buy' && priceWentUp) || (direction === 'sell' && !priceWentUp);
     const oppCorrect = (opponentDir === 'buy' && priceWentUp) || (opponentDir === 'sell' && !priceWentUp);
@@ -290,6 +292,7 @@ export default function App() {
     setGameStatus('waiting');
     setResult(null);
     setMyDirection(null);
+    setOpponentDirection(null);
     setBetAmount(0);
     setCountdown(0);
   }, []);
@@ -477,7 +480,16 @@ export default function App() {
                 )}
               </div>
               <div className="h-[500px]">
-                <TradingViewChart asset={selectedAsset} height={500} />
+                <TradingViewChart 
+                  asset={selectedAsset} 
+                  height={500}
+                  gameActive={gameStatus === 'resolved' && countdown > 0 && !result}
+                  player1Direction={myDirection}
+                  player2Direction={opponentDirection}
+                  openPrice={betInfoRef.current?.openPrice || 0}
+                  currentPrice={currentPrice}
+                  result={result}
+                />
               </div>
             </div>
 
