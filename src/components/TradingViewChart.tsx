@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, memo } from 'react';
 import { TradingAsset } from '../types';
 
 interface TradingViewChartProps {
@@ -26,9 +26,10 @@ const getTradingViewSymbol = (asset: TradingAsset): string => {
   return symbolMap[asset.id] || 'BINANCE:BTCUSDT';
 };
 
-export default function TradingViewChart({ asset, height = 500 }: TradingViewChartProps) {
+const TradingViewChart = memo(function TradingViewChart({ asset, height = 500 }: TradingViewChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const widgetId = `tradingview_${asset.id}_${Date.now()}`;
+  // Use ref to store stable widget ID that only changes when asset changes
+  const widgetIdRef = useRef(`tradingview_${asset.id}_${Date.now()}`);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -58,14 +59,14 @@ export default function TradingViewChart({ asset, height = 500 }: TradingViewCha
       hide_legend: false,
       save_image: false,
       studies: [],
-      container_id: widgetId,
+      container_id: widgetIdRef.current,
       hide_volume: false,
       support_host: 'https://www.tradingview.com',
     });
 
     // Create container div
     const widgetContainer = document.createElement('div');
-    widgetContainer.id = widgetId;
+    widgetContainer.id = widgetIdRef.current;
     widgetContainer.className = 'tradingview-widget-container__widget';
     widgetContainer.style.height = '100%';
     widgetContainer.style.width = '100%';
@@ -80,7 +81,7 @@ export default function TradingViewChart({ asset, height = 500 }: TradingViewCha
         containerRef.current.innerHTML = '';
       }
     };
-  }, [asset.id, widgetId]);
+  }, [asset.id]); // Only depend on asset.id, not widgetId
 
   return (
     <div 
@@ -95,4 +96,6 @@ export default function TradingViewChart({ asset, height = 500 }: TradingViewCha
       }}
     />
   );
-}
+});
+
+export default TradingViewChart;
