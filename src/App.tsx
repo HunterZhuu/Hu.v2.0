@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import TradingViewChart from './components/TradingViewChart';
+import ChartContainer from './components/ChartContainer';
 import MarketOverview from './components/MarketOverview';
 import PlayerSearch from './components/PlayerSearch';
 import UserProfile from './components/UserProfile';
@@ -479,18 +479,15 @@ export default function App() {
                   </div>
                 )}
               </div>
-              <div className="h-[500px]">
-                <TradingViewChart 
-                  asset={selectedAsset} 
-                  height={500}
-                  gameActive={gameStatus === 'resolved' && countdown > 0 && !result}
-                  player1Direction={myDirection}
-                  player2Direction={opponentDirection}
-                  openPrice={betInfoRef.current?.openPrice || 0}
-                  currentPrice={currentPrice}
-                  result={result}
-                />
-              </div>
+              <ChartContainer
+                asset={selectedAsset}
+                gameActive={gameStatus === 'resolved' && countdown > 0 && !result}
+                player1Direction={myDirection}
+                player2Direction={opponentDirection}
+                openPrice={betInfoRef.current?.openPrice || 0}
+                currentPrice={currentPrice}
+                result={result}
+              />
             </div>
 
             {/* Game Controls */}
