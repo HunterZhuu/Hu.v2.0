@@ -303,7 +303,13 @@ export default function App() {
   }, []);
 
   const handleDeposit = useCallback((amount: number, method: string) => {
+    const DEPOSIT_FEE_PERCENT = 2;
+    const fee = amount * (DEPOSIT_FEE_PERCENT / 100);
+    
+    // Add full amount to balance (user receives what they wanted)
     setBalance(prev => prev + amount);
+    
+    // Record deposit transaction
     setTransactions(prev => [{
       id: `deposit_${Date.now()}`,
       type: 'deposit',
@@ -312,8 +318,19 @@ export default function App() {
       status: 'completed',
       description: `Deposit via ${method}`,
       timestamp: new Date(),
+      fee: fee,
+      details: `Paid $${(amount + fee).toFixed(2)}, received $${amount.toFixed(2)}`,
+    }, {
+      id: `fee_${Date.now()}_deposit`,
+      type: 'fee',
+      amount: fee,
+      method: method,
+      status: 'completed',
+      description: `Deposit processing fee (${DEPOSIT_FEE_PERCENT}%)`,
+      timestamp: new Date(),
     }, ...prev]);
-    setMessage(`Deposited $${amount.toFixed(2)}`);
+    
+    setMessage(`Deposited $${amount.toFixed(2)} (Fee: $${fee.toFixed(2)})`);
     setTimeout(() => setMessage(''), 3000);
   }, []);
 

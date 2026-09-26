@@ -23,6 +23,7 @@ export default function DepositModal({
   if (!isOpen) return null;
 
   const depositOptions = [50, 100, 250, 500];
+  const DEPOSIT_FEE_PERCENT = 2; // 2% deposit fee
   
   const paymentMethods = [
     { id: 'paypal', name: 'PayPal', icon: '💳', description: 'fhs_alhinai@hotmail.com' },
@@ -44,6 +45,11 @@ export default function DepositModal({
   const getFinalAmount = () => {
     return selectedAmount || parseFloat(customAmount) || 0;
   };
+
+  // Calculate fee breakdown
+  const depositAmount = getFinalAmount();
+  const depositFee = depositAmount * (DEPOSIT_FEE_PERCENT / 100);
+  const totalToPay = depositAmount + depositFee;
 
   const handleNext = () => {
     if (step === 'amount' && getFinalAmount() > 0) {
@@ -147,8 +153,28 @@ export default function DepositModal({
             <>
               <div>
                 <label className="text-sm font-bold text-gray-400 mb-2 block">
-                  Deposit ${getFinalAmount().toFixed(2)} via
+                  Select Payment Method
                 </label>
+                
+                {/* Fee Summary */}
+                <div className="bg-gray-800/30 rounded-lg p-3 mb-3">
+                  <div className="text-xs text-gray-400 mb-2">Deposit Summary</div>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">You receive:</span>
+                      <span className="text-white font-bold">${depositAmount.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Fee ({DEPOSIT_FEE_PERCENT}%):</span>
+                      <span className="text-amber-400">+${depositFee.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between border-t border-gray-700 pt-1 mt-1">
+                      <span className="text-gray-300 font-bold">You pay:</span>
+                      <span className="text-green-400 font-bold">${totalToPay.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+                
                 <div className="space-y-2">
                   {paymentMethods.map((method) => (
                     <button
@@ -197,30 +223,53 @@ export default function DepositModal({
           {step === 'confirm' && (
             <>
               <div className="bg-gray-800/50 rounded-lg p-4 space-y-3">
-                <div className="text-sm font-bold text-gray-400 mb-2">Confirm Deposit</div>
+                <div className="text-sm font-bold text-gray-400 mb-2">Deposit Breakdown</div>
                 
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Amount:</span>
-                  <span className="text-white font-bold">${getFinalAmount().toFixed(2)}</span>
+                {/* What you want in account */}
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-400">Amount to receive:</span>
+                  <span className="text-white font-bold text-lg">${depositAmount.toFixed(2)}</span>
                 </div>
                 
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Method:</span>
+                {/* Fee breakdown */}
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-400">Processing fee ({DEPOSIT_FEE_PERCENT}%):</span>
+                  <span className="text-amber-400 font-bold">+${depositFee.toFixed(2)}</span>
+                </div>
+                
+                {/* Total to pay */}
+                <div className="border-t border-gray-700 pt-3 mt-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-300 font-bold">Total you pay:</span>
+                    <span className="text-green-400 font-bold text-xl">${totalToPay.toFixed(2)}</span>
+                  </div>
+                </div>
+                
+                {/* What they receive */}
+                <div className="bg-green-900/20 border border-green-700/30 rounded p-3 mt-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-green-400 font-bold">You receive in account:</span>
+                    <span className="text-green-400 font-bold text-lg">${depositAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    ✓ Full amount added to your balance
+                  </div>
+                </div>
+                
+                {/* Payment method */}
+                <div className="flex justify-between items-center pt-2">
+                  <span className="text-gray-500">Payment method:</span>
                   <span className="text-white font-bold">
                     {paymentMethods.find(m => m.id === selectedMethod)?.name}
                   </span>
                 </div>
                 
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Processing Time:</span>
-                  <span className="text-white">Instant</span>
-                </div>
-                
+                {/* New balance */}
                 <div className="border-t border-gray-700 pt-3 mt-3">
                   <div className="flex justify-between">
-                    <span className="text-gray-500">New Balance:</span>
+                    <span className="text-gray-500">New balance after deposit:</span>
                     <span className="text-green-400 font-bold">
-                      ${(currentBalance + getFinalAmount()).toFixed(2)}
+                      ${(currentBalance + depositAmount).toFixed(2)}
                     </span>
                   </div>
                 </div>
@@ -231,14 +280,16 @@ export default function DepositModal({
                 <div className="text-xs text-gray-400">
                   {selectedMethod === 'paypal' && (
                     <>
-                      Send ${getFinalAmount().toFixed(2)} to: <span className="text-white font-bold">fhs_alhinai@hotmail.com</span>
+                      Send <span className="text-white font-bold">${totalToPay.toFixed(2)}</span> to: <span className="text-white font-bold">fhs_alhinai@hotmail.com</span>
                       <br />Include your username in the payment note
+                      <br /><span className="text-amber-400">You pay ${totalToPay.toFixed(2)}, receive ${depositAmount.toFixed(2)} in account</span>
                     </>
                   )}
                   {(selectedMethod === 'applepay' || selectedMethod === 'googlepay' || selectedMethod === 'omannet') && (
                     <>
-                      Send ${getFinalAmount().toFixed(2)} to: <span className="text-white font-bold">+96895188386</span>
+                      Send <span className="text-white font-bold">${totalToPay.toFixed(2)}</span> to: <span className="text-white font-bold">+96895188386</span>
                       <br />Include your username in the payment note
+                      <br /><span className="text-amber-400">You pay ${totalToPay.toFixed(2)}, receive ${depositAmount.toFixed(2)} in account</span>
                     </>
                   )}
                 </div>
